@@ -1,213 +1,152 @@
-import React, {useCallback, useEffect, useMemo, useReducer, useState} from 'react';
+import React, {useCallback, useContext, useEffect, useMemo, useReducer, useState} from 'react';
 import './App.css';
-import {v4} from 'uuid'
 import ReactAudioPlayer from "react-audio-player";
+import {Caption, CaptionFile, EditContext, parserFactory, TimeContext, Transcript} from "./Transcript";
+import {v4} from 'uuid';
+import EventEmitter from 'events';
 
-function Utf8ArrayToStr(array: Uint8Array): string {
-    var out, i, len, c;
-    var char2, char3;
-
-    out = "";
-    len = array.length;
-    i = 0;
-    while (i < len) {
-        c = array[i++];
-        switch (c >> 4) {
-            case 0:
-            case 1:
-            case 2:
-            case 3:
-            case 4:
-            case 5:
-            case 6:
-            case 7:
-                // 0xxxxxxx
-                out += String.fromCharCode(c);
-                break;
-            case 12:
-            case 13:
-                // 110x xxxx   10xx xxxx
-                char2 = array[i++];
-                out += String.fromCharCode(((c & 0x1F) << 6) | (char2 & 0x3F));
-                break;
-            case 14:
-                // 1110 xxxx  10xx xxxx  10xx xxxx
-                char2 = array[i++];
-                char3 = array[i++];
-                out += String.fromCharCode(((c & 0x0F) << 12) |
-                    ((char2 & 0x3F) << 6) |
-                    ((char3 & 0x3F) << 0));
-                break;
-        }
-    }
-
-    return out;
-}
-
-const format = (raw: number): string => {
+export const format = (raw: number): string => {
     const hours = Math.floor(raw / (60 * 60))
     const minutes = Math.floor((raw - hours * 60 * 60) / (60))
     const seconds = (raw - hours * 60 * 60 - minutes * 60)
     return `${hours.toFixed(0).padStart(2, '0')}:${minutes.toFixed(0).padStart(2, '0')}:${seconds.toFixed(5).padStart(2)}`
 }
-type tt = { start: number, end: number, text: string }
-
-const toSeconds = (raw: string): number => {
-    if (!raw) return 0
-    const [h, m, s] = raw.split(':').map(parseFloat)
-    return h * 60 * 60 + m * 60 + s
-}
-
-interface Caption {
-    start: number
-    startRaw: string
-    end: number
-    endRaw: string
-    align: string
-    voice: string
-    text: string
-}
-
-interface CaptionFile {
-    captions: Caption[]
-    format: string
-    text: string
-}
-
-const Transcript: React.FC<{ url?: string, setRange: (s: number, e: number) => void }> = ({url, setRange}) => {
-    const [captions, dispatch] = useReducer<(cf: CaptionFile, fresh: Caption) => CaptionFile, CaptionFile>((cf, fresh) => {
-            if (cf.captions.length < 200) cf.captions.push(fresh)
-            return cf
-        }
-        , {captions: [], format: "", text: ""} as CaptionFile
-        , (t) => t)
-    const parser = useMemo(() => new WritableStream({
-            start(controller: any) {
-                console.log("sink start", controller)
-            },
-            write(chunk: Uint8Array, controller: any) {
-                Utf8ArrayToStr(chunk).split(/\r\n\r\n/)
-                    .filter((line) => /\d/.test(line))
-                    .map(string => string.split("\r\n"))
-                    .map(([times, rawText]) => {
-                        const [, startRaw, endRaw, align] = times?.match(/([^ ]+) --> ([^ ]+)(align:\w+)?/) || []
-                        const [, voice, text] = rawText?.match(/^<v ([^>]+)> (.+)$/) || []
-                        return {startRaw, endRaw, align, voice, text}
-                    })
-                    .map(d => ({...d, end: toSeconds(d.endRaw)}))
-                    .map(d => ({...d, start: toSeconds(d.startRaw)}))
-                    .forEach(dispatch)
-            },
-            close() {
-                console.log("close")
-            },
-            abort(reason: any) {
-                console.log("abort", reason)
-            }
-
-        }),
-        []
-    )
-
-    useEffect(() => {
-        if (!url) return
-        console.log("fetch start")
-        fetch(url).then(res => res?.body?.pipeTo(parser)).then(() => console.log("fetch done"))
-    }, [url, parser])
-    console.log("render transscript", captions)
-    return <>{captions.captions.map(({start, end, startRaw, endRaw, voice, text, align}) => (
-        <div key={v4()}
-             onClick={() => setRange(start, end)}><span>{`${startRaw} --> ${endRaw} ${align || ''}`}</span><p>{`<v: ${voice}> ${text}`}</p></div>))}</>
-}
 
 function App() {
-    const [src, setSrc] = useState<string>("/S3E3_Get_Help.mp3")
-    const [transcript, setTranscript] = useState<string>("/S3E3Transcript.vtt")
-    const [length, setLength] = useState<number>(2)
-    const [start, setStart] = useState<number>(0)
-    const [end, setEnd] = useState<number>(length)
-    const [time, setTime] = useState<number>(0)
-    const [textArea, setTextArea] = useState<HTMLTextAreaElement | null>()
-    const [ref, setRef] = useState<ReactAudioPlayer | null>()
-    const [element, setElement] = useState<HTMLAudioElement>()
-    const [output, dispatch] = useReducer<(tt: tt[], fresh: tt) => tt[], tt[]>((a, fresh) => [...a, fresh], [] as tt[], (t) => t)
-
-    const setRange = useCallback((start, end) => {
-        setStart(start);
-        setEnd(end)
-    }, [setStart, setEnd])
-    useEffect(() => {
-        if (!ref) return
-        if (!ref.audioEl.current) return
-        setElement(ref.audioEl.current)
-    }, [ref])
+    const keyboard = useMemo(() => new EventEmitter(), [])
+    const clock = useMemo(() => new EventEmitter(), [])
     useEffect(() => {
         document.onkeyup = event => {
-            const {ctrlKey, key, code} = event
-            if (key === '>') {
-                setLength(length + 0.2)
-                setEnd(start + length)
-            }
-            if (key === '<') {
-                setLength(length - 0.2)
-                setEnd(start + length)
-            }
-            if (code === 'KeyB' && ctrlKey) {
-                const starty = start
-                setStart(end - length)
-                setEnd(starty)
-            }
-            if (code === 'Space' && ctrlKey) {
-                if (textArea?.value) {
-                    dispatch({start, end, text: textArea.value})
-                    textArea.value = ""
-                }
-                const mid = end
-                setEnd(end + length)
-                setStart(mid)
-                event.cancelBubble = true
-            } else {
-                console.log(event)
-            }
+            const {code} = event
+            keyboard.emit('keyboard', event)
+            keyboard.emit(code, event)
+            console.log(event)
         }
-    }, [length, end, start, textArea, textArea?.value])
-    useEffect(() => {
-        if (!element) return
-        if (time > end) element.currentTime = start;
-    }, [time, element, end, start])
-    useEffect(() => {
-        if (!start) return
-        if (!element) return
-        element.currentTime = start
-    }, [start, element])
+    }, [keyboard])
+    const editContextValue = useMemo(() => ({clock, keyboard}), [clock, keyboard])
     return (
         <div onKeyPress={console.log} className="App">
             <header className="App-header">
-                <label htmlFor={"start"}>Start</label><input name={"start"} value={start} type={"text"}
-                                                             onChange={e => setStart(parseInt(e.target.value))}/>
-                <label htmlFor={"end"}>End</label><input name={"end"} type={"text"} value={end}
-                                                         onChange={e => setEnd(parseInt(e.target.value))}/>
-                <label
-                    htmlFor={"source"}>Audio</label><input name={"source"} type={"text"} value={src}
-                                                           onChange={e => setSrc(e.target.value)}/>
-                <label htmlFor={"transcript"}>Transcript</label><input name={"transcript"} type={"transcript"}
-                                                                       value={transcript}
-                                                                       onChange={e => setTranscript(e.target.value)}/>
-                <ReactAudioPlayer ref={e => setRef(e)} listenInterval={100} onListen={setTime} src={src} autoPlay
-                                  controls onPlay={() => element ? element.currentTime = start : void 0}/>
-                <textarea ref={t => setTextArea(t)} onKeyPressCapture={console.log} onKeyDown={console.log}
-                          defaultValue={""}/>
-                <Transcript url={transcript} setRange={setRange}/>
-                <pre>
-                {output.map(({
-                                 start,
-                                 end,
-                                 text
-                             }) => `${format(start)} --> ${format(end)} align:middle\n${text}\n`).join("\n")}
-            </pre>
+                <EditContext.Provider value={editContextValue}>
+                    <UrlBox/>
+                </EditContext.Provider>
             </header>
         </div>
     );
 }
 
+export const EditBox: React.FC<{ caption: Caption }> = ({
+                                                            caption: {start, end, voice, text} = {
+                                                                start: 0,
+                                                                end: 0,
+                                                                voice: "Empty",
+                                                                text: "Empty"
+                                                            }, children
+                                                        }) => {
+    const {clock} = useContext(EditContext)
+    const [textArea, setTextArea] = useState<HTMLTextAreaElement | null>()
+
+    const [voiceSet, dispatchVoice] = useReducer((set: Set<string>, newSet: Set<string>) => newSet, new Set<string>(["empty"]))
+    const keyboardHandler = useCallback(({key}) => void 0, [])
+    useEffect(() => {
+        if (!textArea) return
+        textArea.value = text || "space left blank"
+    }, [text, textArea])
+    useEffect(() => {
+        clock.on('voiceSet', (set) => dispatchVoice(set))
+        clock.on('Period', keyboardHandler)
+        clock.on('Comma', keyboardHandler)
+        clock.on('KeyB', keyboardHandler)
+    }, [dispatchVoice, keyboardHandler, clock])
+    return (<>
+        <div>
+            <div>
+                <label htmlFor={"start"}>Start</label>
+                <input name={"start"} value={start} type={"text"}
+                       onChange={e => clock.emit('setStart', parseInt(e.target.value))}/>
+            </div>
+            <div>
+                <label htmlFor={"end"}>End</label>
+                <input name={"end"} type={"text"} value={end}
+                       onChange={e => clock.emit('setEnd', parseInt(e.target.value))}/>
+            </div>
+        </div>
+        <div>
+            <label htmlFor="voice">Voice</label>
+            <select name="voice" ref={t => clock.emit('setSpeaking', t)} defaultValue={voice}>{
+                Array.from(voiceSet.values()).sort().map(speaking =>
+                    <option key={v4()} value={speaking}>{speaking}</option>
+                )
+            }</select>
+            <textarea style={{fontSize: "1em"}} ref={t => setTextArea(t)} cols={60}
+                      onKeyPressCapture={console.log} onKeyDown={console.log}
+                      defaultValue={""}/>
+        </div>
+    </>)
+}
+
+
+export const MediaBox: React.FC<{ transcript: CaptionFile, audio: string }> = ({transcript, audio}) => {
+    const {clock} = useContext(EditContext)
+    const [ref, setRef] = useState<HTMLAudioElement | null>()
+    const [time, setTime] = useState<number>(0)
+    const [loop] = useState<Boolean>(false)
+    const [caption, setCaption] = useState<Caption>()
+    useEffect(() => void clock.on('caption', setCaption), [caption, clock])
+    useEffect(() => {
+        if (!ref) return
+        if (!caption) return
+        if (time > caption.end && loop) ref.currentTime = caption.start;
+    }, [time, ref, caption, caption?.end, caption?.start, loop])
+    return <><ReactAudioPlayer ref={e => setRef(e?.audioEl.current)} listenInterval={199} onListen={setTime} src={audio}
+                               controls onPlay={() => ref && caption ? ref.currentTime = caption.start : void -1}/>
+        <TimeContext.Provider value={time}>
+            <Transcript transcript={transcript}/>
+        </TimeContext.Provider>
+    </>
+}
+
+export const UrlBox: React.FC = () => {
+    const {clock} = useContext(EditContext)
+    const [src, setSrc] = useState<string>("/S3E3_Get_Help.mp3")
+    const [transcript, setTranscript] = useState<string>("/S3E3_Get_Help_fuckedup.vtt")
+
+    const [voices, voiceDispatch] = useReducer<(voices: Set<string>, fresh: { voices: string[], clear: boolean }) => Set<string>, string[]>((set, {
+        voices,
+        clear
+    }) => new Set<string>(clear ? [] : [...Array.from(set.values()), ...voices]), [], t => new Set<string>(t))
+    const [captions, dispatch] = useReducer<(cf: CaptionFile, fresh: { array: Caption[], clear: boolean }) => CaptionFile, CaptionFile>((cf, {
+            array,
+            clear
+        }) => {
+            if (clear) {
+                cf.captions = []
+                voiceDispatch({voices: [], clear: true})
+            } else cf.captions.push(...array)
+            voiceDispatch({voices: cf.captions.map(({voice}) => voice), clear: false})
+            return Object.assign({}, cf)
+        }
+        , {captions: [], format: "", text: ""} as CaptionFile
+        , (t) => t)
+
+    useEffect(() => void clock.emit('setVoices', voices), [voices, clock])
+    useEffect(() => {
+        if (!transcript) return
+        if (!dispatch) return
+        if (!parserFactory) return
+        console.log("fetch start", transcript)
+        fetch(transcript).then(res => res?.body?.pipeTo(parserFactory(dispatch))).then(() => console.log("Done fetch"))
+    }, [transcript])
+
+    return <>
+        <div><label
+            htmlFor={"source"}>Audio</label><input name={"source"} type={"text"} defaultValue={src}
+                                                   onChange={e => setSrc(e.target.value)}/></div>
+        <div><label htmlFor={"transcript"}>Transcript</label><input name={"transcript"} type={"transcript"}
+                                                                    value={transcript}
+                                                                    onChange={e => setTranscript(e.target.value)}/>
+        </div>
+        <MediaBox transcript={captions} audio={src}/>
+    </>
+}
 export default App;
