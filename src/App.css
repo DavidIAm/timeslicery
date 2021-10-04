@@ -2,6 +2,17 @@
   text-align: center;
 }
 
+input, button, select {
+  font-size: calc(10px + 2vmin);
+  white-space: nowrap;
+}
+.leftwards {
+  text-align: left;
+}
+.rightwards {
+  text-align: right;
+}
+
 .App-logo {
   height: 40vmin;
   pointer-events: none;
