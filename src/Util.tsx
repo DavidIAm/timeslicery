@@ -91,5 +91,5 @@ export const format = (raw: number): string => {
   const seconds = raw - hours * 60 * 60 - minutes * 60;
   return `${hours.toFixed(0).padStart(2, "0")}:${minutes
     .toFixed(0)
-    .padStart(2, "0")}:${seconds.toFixed(5).padStart(2)}`;
+    .padStart(2, "0")}:${seconds.toFixed(3).padStart(6, "0")}`;
 };

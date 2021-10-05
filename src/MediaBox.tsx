@@ -8,6 +8,7 @@ import React, {
 import { EditContext } from "./Transcript";
 import { Caption } from "./Caption";
 import ReactAudioPlayer from "react-audio-player";
+import { format } from "./Util";
 
 const listenInterval = 200;
 
@@ -51,6 +52,36 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
       clock.off("blurPause", dispatchBlurPause);
     };
   }, [audioPlayer, clock]);
+
+  const drawOutStart = useCallback(
+    (caption) => {
+      if (!audioPlayer) return;
+      setLoop(false);
+      console.log("STARTING DRAW OUT");
+      audioPlayer.currentTime = caption.start;
+      audioPlayer.play();
+    },
+    [audioPlayer]
+  );
+
+  const drawOutDone = useCallback(
+    (caption) => {
+      if (!audioPlayer) return;
+      console.log("ENDING DRAW OUT", format(audioPlayer.currentTime));
+      clock.emit("newEndFor", caption, audioPlayer.currentTime);
+      audioPlayer.currentTime = caption.start;
+      setLoop(true);
+    },
+    [audioPlayer]
+  );
+  useEffect(() => {
+    clock.on("drawOutStart", drawOutStart);
+    clock.on("drawOutDone", drawOutDone);
+    return (): void => {
+      clock.off("drawOutStart", drawOutStart);
+      clock.off("drawOutDone", drawOutDone);
+    };
+  }, [clock, drawOutStart, drawOutDone]);
 
   useEffect(() => {
     if (!audioPlayer) return;
@@ -127,7 +158,7 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
         ref={(e) => setAudioPlayer(e?.audioEl.current)}
         listenInterval={listenInterval}
         onListen={emitTime}
-        volume={0.1}
+        volume={0.5}
         src={audio}
         controls
       />

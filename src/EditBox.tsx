@@ -6,7 +6,7 @@ import React, {
   useReducer,
   useState,
 } from "react";
-import { Caption } from "./Caption";
+import { Caption, PLC } from "./Caption";
 import { EditContext } from "./Transcript";
 import { v4 } from "uuid";
 import { format } from "./Util";
@@ -76,10 +76,32 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
       clock.off("KeyB", keyboardHandler);
     };
   }, [dispatchVoice, keyboardHandler, clock]);
+
+  const [modeDisplay, setModeDisplay] = useState<string>();
+  const [playLoopCue, setPlayLoopCue] = useState<PLC>(PLC.PAUSE);
   const [looping, setLooping] = useState<boolean>(false);
   useEffect(() => {
+    setPlayLoopCue(PLC.LOOP);
     clock.emit("setLoop", looping);
   }, [looping, clock]);
+  useEffect(() => {
+    clock.emit("PlayLoopCue", playLoopCue);
+    switch (playLoopCue) {
+      case PLC.PAUSE:
+        setModeDisplay("Pause");
+        break;
+      case PLC.PLAY:
+        setModeDisplay("Play");
+        break;
+      case PLC.LOOP:
+        setModeDisplay("Loop");
+        clock.emit("setLoop", looping);
+        break;
+      case PLC.CUE:
+        setModeDisplay("Cue");
+        break;
+    }
+  }, [playLoopCue, clock, looping]);
   return (
     <>
       <div
@@ -136,8 +158,15 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
             </button>
           </div>
           <div>
-            <button onClick={() => clock.emit("delete", caption.index)}>
-              Delete
+            <button
+              onClick={() =>
+                clock.emit(
+                  playLoopCue === PLC.PLAY ? "play" : "pause",
+                  caption.index
+                )
+              }
+            >
+              {playLoopCue === PLC.PLAY ? "Play" : "Pause"}
             </button>
           </div>
           <div className={"rightwards"}>
@@ -153,7 +182,7 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
               &lt; Gap &lt;
             </button>
           </div>
-          <div>{looping ? "Loop" : "Play"} Mode</div>
+          <div>{modeDisplay} Mode</div>
           <div className={"rightwards"}>
             <button
               disabled={(foreSize || 0) < 0.1}

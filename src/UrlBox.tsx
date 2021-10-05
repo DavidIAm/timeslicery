@@ -3,6 +3,7 @@ import { EditContext, Transcript } from "./Transcript";
 import { Caption, CaptionFile } from "./Caption";
 import { parserFactory } from "./Util";
 import { MediaBox } from "./MediaBox";
+import { v4 } from "uuid";
 
 export const UrlBox: React.FC = () => {
   const { clock } = useContext(EditContext);
@@ -30,29 +31,20 @@ export const UrlBox: React.FC = () => {
     ) => CaptionFile,
     CaptionFile
   >(
-    (cf, { array = [], clear, done, chunk }) => {
+    (cf, { array = [], clear, chunk }) => {
       if (clear) {
         cf.chunks = {};
         cf.captions = [];
         voiceDispatch({ voices: [], clear: true });
       }
       cf.chunks[chunk] = array;
-      cf.captions = Object.values(cf.chunks)
-        .flatMap((i) => i)
-        .sort((a, b) => a.start - b.start);
-      voiceDispatch({
-        voices: cf.captions.map(({ voice }) => voice),
-        clear: false,
-      });
-      cf.captions.forEach((value, index, arr) => {
-        value.index = index;
-        value.backSize = (value.start - arr[Math.max(index - 1, 0)].end) * 1000;
-        value.foreSize =
-          (arr[Math.min(index + 1, arr.length - 1)].start - value.end) * 1000;
+      cf.add(Object.values(cf.chunks).flatMap((i) => i));
+      cf.captions.forEach((value) => {
+        value.uuid = v4();
       });
       return Object.assign({}, cf);
     },
-    { captions: [], format: "", text: "", chunks: [] } as CaptionFile,
+    { chunks: [] },
     (t) => t
   );
 
