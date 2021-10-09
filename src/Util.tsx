@@ -1,5 +1,6 @@
 import React from "react";
-import { Caption } from "./Caption";
+import { Caption, makeMutation, Mutation, MutationActions } from "./Caption";
+import { v4 } from "uuid";
 
 export function Utf8ArrayToStr(array: Uint8Array): string {
   var out, i, len, c;
@@ -47,23 +48,26 @@ export const toSeconds = (raw: string): number => {
   const [h, m, s] = raw.split(":").map(parseFloat);
   return h * 60 * 60 + m * 60 + s;
 };
-export const parserFactory = (
-  dispatch: React.Dispatch<{
-    array?: Caption[];
-    clear: boolean;
-    done: boolean;
-    chunk: number;
-  }>
-) =>
+export const parserFactory = (dispatch: React.Dispatch<Mutation>) =>
+  // {
+  //   array?: Caption[];
+  //   clear: boolean;
+  //   done: boolean;
+  //   chunk: number;
+  // }
   new WritableStream({
     start(controller: any) {
       controller.chunk = -1;
-      dispatch({ chunk: controller.chunk, clear: true, done: false });
+      dispatch(
+        makeMutation({
+          action: MutationActions.CLEAR,
+          when: new Date(),
+          note: "parse start",
+        })
+      );
       controller.holdover = "";
     },
-    close() {
-      dispatch({ chunk: -1, clear: false, done: true });
-    },
+    close() {},
     write(chunk: Uint8Array, controller: any) {
       controller.chunk++;
       const stringy = Utf8ArrayToStr(chunk);
@@ -78,11 +82,24 @@ export const parserFactory = (
           const [, startRaw, endRaw, align] =
             times?.match(/([^ ]+) --> ([^ ]+)(align:\w+)?/) || [];
           const [, voice, text] = rawText?.match(/^<v ([^>]+)> (.+)$/) || [];
-          return { startRaw, endRaw, align, voice, text };
+          return {
+            startRaw,
+            start: toSeconds(startRaw),
+            endRaw,
+            end: toSeconds(endRaw),
+            align,
+            voice,
+            text,
+            uuid: v4(),
+          } as Caption;
+        });
+      dispatch(
+        makeMutation({
+          action: MutationActions.BULK_ADD,
+          bulk: array,
+          note: "load from parser",
         })
-        .map((d) => ({ ...d, end: toSeconds(d.endRaw) }))
-        .map((d) => ({ ...d, start: toSeconds(d.startRaw) }));
-      dispatch({ chunk: controller.chunk, array, clear: false, done: false });
+      );
     },
   });
 export const format = (raw: number): string => {

@@ -27,19 +27,19 @@ export const Transcript: React.FC<{ transcript: CaptionFile }> = ({
   const cutInHalf = useCallback(
     (index) => {
       console.log("CPATION", index);
-      const caption = all[index];
+      const caption = transcript.captions[index];
       if (!caption) return;
       caption.end = caption.start + (caption.end - caption.start) / 2;
       caption.endRaw = format(caption.end);
     },
-    [all]
+    [transcript.captions]
   );
   useEffect(() => {
     clock.on("cutInHalf", cutInHalf);
     return (): void => {
       clock.off("cutInHalf", cutInHalf);
     };
-  }, [clock]);
+  }, [clock, cutInHalf]);
 
   return (
     <div style={{ width: "100%" }}>

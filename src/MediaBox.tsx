@@ -64,6 +64,24 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
     [audioPlayer]
   );
 
+  const cueIn = useCallback(
+    (caption) => {
+      if (!audioPlayer) return;
+      console.log("CUE IN", format(audioPlayer.currentTime));
+      clock.emit("newStartFor", caption, audioPlayer.currentTime);
+      setLoop(true);
+    },
+    [clock, audioPlayer]
+  );
+  const cueOut = useCallback(
+    (caption) => {
+      if (!audioPlayer) return;
+      console.log("CUE OUT", format(audioPlayer.currentTime));
+      clock.emit("newEndFor", caption, audioPlayer.currentTime);
+      setLoop(true);
+    },
+    [clock, audioPlayer]
+  );
   const drawOutDone = useCallback(
     (caption) => {
       if (!audioPlayer) return;
@@ -72,25 +90,32 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
       audioPlayer.currentTime = caption.start;
       setLoop(true);
     },
-    [audioPlayer]
+    [audioPlayer, clock]
   );
   useEffect(() => {
+    clock.on("cueIn", cueIn);
+    clock.on("cueOut", cueOut);
     clock.on("drawOutStart", drawOutStart);
     clock.on("drawOutDone", drawOutDone);
     return (): void => {
+      clock.off("cueIn", cueIn);
+      clock.off("cueOut", cueOut);
       clock.off("drawOutStart", drawOutStart);
       clock.off("drawOutDone", drawOutDone);
     };
-  }, [clock, drawOutStart, drawOutDone]);
+  }, [clock, drawOutStart, drawOutDone, cueIn, cueOut]);
 
   useEffect(() => {
     if (!audioPlayer) return;
     if (blurPause) {
       audioPlayer.pause();
+      clock.emit("time", audioPlayer.currentTime);
       return;
     }
     play ? audioPlayer.play() : audioPlayer.pause();
-  }, [audioPlayer, play, blurPause]);
+    clock.emit("time", audioPlayer.currentTime);
+    clock.emit("playState", play);
+  }, [audioPlayer, play, blurPause, clock]);
 
   useEffect(() => {
     if (!audioPlayer) return;
@@ -128,13 +153,22 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
   useEffect(() => {
     if (!audioPlayer) return;
     const setStart = (time: number) => (audioPlayer.currentTime = time);
+    const doPlay = () => togglePlay(true);
+    const doPause = () => togglePlay(false);
     clock.on("playFrom", setStart);
-    return (): void => void clock.off("playFrom", setStart);
+    clock.on("play", doPlay);
+    clock.on("pause", doPause);
+    return (): void => {
+      clock.off("playFrom", setStart);
+      clock.off("play", doPlay);
+      clock.off("pause", doPause);
+    };
   }, [clock, audioPlayer]);
 
   const jumpToHandler = useCallback(
     (c: Caption) => {
       setCaption(c);
+      clock.emit("time", c.start);
       if (!audioPlayer) return;
       if (
         audioPlayer.currentTime >= c.start &&
@@ -143,7 +177,7 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
         return;
       audioPlayer.currentTime = c.start;
     },
-    [audioPlayer]
+    [audioPlayer, clock]
   );
 
   useEffect(() => {

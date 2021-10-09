@@ -143,11 +143,11 @@ export const Lines: React.FC<LinesProps> = ({ all }) => {
   }, [keyboard, clock, position, all, play]);
 
   useEffect(() => {
-    if (position < 0) return;
+    if (position < 0 || !all[position]) return;
     clock.emit("jumpToCaption", all[position]);
     setWindow({
       top: Math.max(position - 1, 0),
-      bottom: Math.min(position + 4, all.length),
+      bottom: Math.min(position + 5, all.length),
     });
   }, [position, all.length, all, clock]);
 
@@ -157,8 +157,10 @@ export const Lines: React.FC<LinesProps> = ({ all }) => {
     if (!bottom) return;
     const timeListener = (currentTime: number): void => {
       const inThisCaption: (c: Caption) => boolean = ({ end, start }) =>
-        currentTime <= end && currentTime >= start;
+        currentTime < end && currentTime >= start;
+
       const positionOf = () => {
+        if (currentTime <= (all[0]?.end || 0)) return 0;
         const sliced = all.slice(top, bottom).find(inThisCaption)?.index;
         if (typeof sliced === "number") return sliced;
         const scanned = all.find(inThisCaption)?.index;
@@ -167,14 +169,26 @@ export const Lines: React.FC<LinesProps> = ({ all }) => {
       };
       changePosition({ abs: positionOf() });
     };
+    const voiceListener = (voices: string[]): void =>
+      console.log("voices", voices);
     clock.on("time", timeListener);
-    return (): void => void clock.off("time", timeListener);
+    clock.on("voices", voiceListener);
+    return (): void => {
+      clock.off("time", timeListener);
+      clock.off("voices", voiceListener);
+    };
   }, [clock, all, position, bottom, top]);
 
   return (
     <>
-      <EditBox caption={all[position]} />
-      <div tabIndex={1} ref={setCaptionBlock} id={"captionBlock"}>
+      <EditBox caption={all[Math.max(position, 0)]} />
+      <div
+        tabIndex={1}
+        onMouseEnter={({ currentTarget }) => currentTarget.focus()}
+        ref={setCaptionBlock}
+        id={"captionBlock"}
+        style={{ cursor: "none" }}
+      >
         <LineSet top={top} position={position} bottom={bottom} set={all} />
       </div>
     </>

@@ -6,10 +6,11 @@ import React, {
   useReducer,
   useState,
 } from "react";
-import { Caption, PLC } from "./Caption";
+import { Caption, CUE_STATE, PLC } from "./Caption";
 import { EditContext } from "./Transcript";
 import { v4 } from "uuid";
 import { format } from "./Util";
+import "./Button.css";
 
 export const LiveClock: React.FC = () => {
   const { clock } = useContext(EditContext);
@@ -22,7 +23,7 @@ export const LiveClock: React.FC = () => {
 };
 
 export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
-  const { start, end, voice, text, foreSize, backSize } = caption || {
+  const { voice, text, foreSize, backSize, index, uuid } = caption || {
     start: 0,
     end: 0,
     voice: "Empty",
@@ -35,7 +36,10 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
   const [textArea, setTextArea] = useState<HTMLTextAreaElement | null>();
   const [speaking, setSpeaking] = useState<HTMLSelectElement | null>();
   const [voiceSet, dispatchVoice] = useReducer(
-    (set: Set<string>, newSet: Set<string>) => newSet,
+    (set: Set<string>, newSet: Set<string>) => {
+      console.log("Reduce Voice");
+      return newSet;
+    },
     new Set<string>(["empty"])
   );
   const keyboardHandler = useCallback(({ key }) => console.log("Key", key), []);
@@ -64,68 +68,117 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
   ) || <></>;
 
   useEffect(() => {
-    const sendVoice = (set: Set<string>) => dispatchVoice(set);
-    clock.on("setVoices", sendVoice);
+    clock.on("voices", dispatchVoice);
     clock.on("Period", keyboardHandler);
     clock.on("Comma", keyboardHandler);
     clock.on("KeyB", keyboardHandler);
     return (): void => {
-      clock.off("setVoices", sendVoice);
+      clock.off("voices", dispatchVoice);
       clock.off("Period", keyboardHandler);
       clock.off("Comma", keyboardHandler);
       clock.off("KeyB", keyboardHandler);
     };
   }, [dispatchVoice, keyboardHandler, clock]);
 
+  const [cueState, setCueState] = useState<CUE_STATE>(CUE_STATE.CUE_OFF);
+  useEffect(() => {
+    if (!clock) return;
+    if (cueState === CUE_STATE.CUE_OFF) return;
+    const cancel = () => setCueState(CUE_STATE.CUE_CANCEL);
+    const save = () => setCueState(CUE_STATE.CUE_SAVE);
+    const cuein = () => setCueState(CUE_STATE.CUE_IN);
+    const cuegap = () => setCueState(CUE_STATE.CUE_GAP);
+    clock.on("Escape", cancel);
+    clock.on("Enter", save);
+    clock.on("Space", cuein);
+    clock.on("Delete", cuegap);
+    return (): void => {
+      clock.off("Escape", cancel);
+      clock.off("Enter", save);
+      clock.off("Space", cuein);
+      clock.off("Delete", cuegap);
+    };
+  }, [cueState, clock]);
+
+  const [stateMessage, setStateMessage] = useState<string>();
   const [modeDisplay, setModeDisplay] = useState<string>();
   const [playLoopCue, setPlayLoopCue] = useState<PLC>(PLC.PAUSE);
   const [looping, setLooping] = useState<boolean>(false);
+
   useEffect(() => {
-    setPlayLoopCue(PLC.LOOP);
+    switch (cueState) {
+      case CUE_STATE.CUE_START:
+        setPlayLoopCue(PLC.CUE);
+        clock.emit("jumpToCaption", caption);
+        clock.emit("saveNewUndoPoint");
+        clock.emit("togglePlay", true);
+        setCueState(CUE_STATE.CUE_GAP);
+        break;
+      case CUE_STATE.CUE_GAP:
+        setStateMessage("CUE GAP");
+        clock.emit("cueOut");
+        break;
+      case CUE_STATE.CUE_IN:
+        clock.emit("cueIn");
+        setStateMessage("CUE CAPTION IN");
+        break;
+      case CUE_STATE.CUE_CANCEL:
+        clock.emit("togglePlay", false);
+        setPlayLoopCue(PLC.PAUSE);
+        setCueState(CUE_STATE.CUE_OFF);
+        break;
+      case CUE_STATE.CUE_SAVE:
+        clock.emit("playLoopCue", "pause");
+        clock.emit("restoreToUndoPoint");
+        clock.emit("togglePlay", false);
+        setPlayLoopCue(PLC.PAUSE);
+        setCueState(CUE_STATE.CUE_OFF);
+    }
+  }, [cueState, clock, caption]);
+
+  useEffect(() => {
+    const checkPlay = (playing: boolean): void => {
+      cueState === CUE_STATE.CUE_OFF
+        ? setPlayLoopCue(playing ? PLC.PLAY : PLC.PAUSE)
+        : void 0;
+    };
+    clock.on("playState", checkPlay);
+    return (): void => void clock.off("playState", checkPlay);
+  }, [cueState, clock]);
+
+  useEffect(() => {
     clock.emit("setLoop", looping);
   }, [looping, clock]);
+
   useEffect(() => {
     clock.emit("PlayLoopCue", playLoopCue);
+    setStateMessage(void 0);
     switch (playLoopCue) {
       case PLC.PAUSE:
         setModeDisplay("Pause");
         break;
       case PLC.PLAY:
-        setModeDisplay("Play");
+        if (looping) setModeDisplay("Play Loop");
+        else setModeDisplay("Play Through");
         break;
-      case PLC.LOOP:
-        setModeDisplay("Loop");
-        clock.emit("setLoop", looping);
+      case PLC.ENTRY:
+        setModeDisplay("Entry");
         break;
       case PLC.CUE:
         setModeDisplay("Cue");
         break;
     }
-  }, [playLoopCue, clock, looping]);
+  }, [playLoopCue, looping, clock]);
   return (
     <>
       <div
         tabIndex={2}
         onMouseLeave={() => setLooping(false)}
-        onMouseEnter={() => setLooping(true)}
+        onMouseEnter={() => {
+          setLooping(true);
+          textArea?.focus();
+        }}
       >
-        <div>
-          <div>
-            <input
-              name={"start"}
-              value={start}
-              type={"text"}
-              onChange={(e) => clock.emit("setStart", parseInt(e.target.value))}
-            />{" "}
-            --&gt;
-            <input
-              name={"end"}
-              type={"text"}
-              value={end}
-              onChange={(e) => clock.emit("setEnd", parseInt(e.target.value))}
-            />
-          </div>
-        </div>
         <div>
           <label htmlFor="voice">Voice</label>
           <select name="voice" ref={(t) => setSpeaking(t)} defaultValue={voice}>
@@ -153,40 +206,104 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
             </button>
           </div>
           <div className={"leftwards"}>
-            <button onClick={() => clock.emit("insertBack", caption.index)}>
+            <button onClick={() => clock.emit("insertBack", caption.uuid)}>
               &lt; Insert &lt;
             </button>
           </div>
           <div>
-            <button
-              onClick={() =>
-                clock.emit(
-                  playLoopCue === PLC.PLAY ? "play" : "pause",
-                  caption.index
-                )
-              }
-            >
-              {playLoopCue === PLC.PLAY ? "Play" : "Pause"}
-            </button>
+            {playLoopCue === PLC.CUE ? (
+              <>
+                <div
+                  className={"hintedButtonBox"}
+                  style={{ display: "flex", justifyContent: "center" }}
+                >
+                  <div>
+                    <div>
+                      <button
+                        disabled={
+                          playLoopCue !== PLC.CUE ||
+                          cueState === CUE_STATE.CUE_GAP
+                        }
+                        onClick={() => setCueState(CUE_STATE.CUE_GAP)}
+                      >
+                        Out
+                      </button>
+                    </div>
+                    <div className="hint">Backspace</div>
+                  </div>
+                  <div>
+                    <div>
+                      <button
+                        disabled={playLoopCue !== PLC.CUE}
+                        onClick={() => setCueState(CUE_STATE.CUE_IN)}
+                      >
+                        In
+                      </button>
+                    </div>
+                    <div className={"hint"}>Space</div>
+                  </div>
+                  <div>
+                    <div>
+                      <button onClick={() => setCueState(CUE_STATE.CUE_CANCEL)}>
+                        Save
+                      </button>
+                    </div>
+                    <div className={"hint"}>Backspace</div>
+                  </div>
+                  <div>
+                    <div>
+                      <button onClick={() => setCueState(CUE_STATE.CUE_SAVE)}>
+                        Cancel
+                      </button>
+                    </div>
+                    <div className={"hint"}>Escape</div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <button onClick={() => setCueState(CUE_STATE.CUE_START)}>
+                  Cue
+                </button>
+                <button
+                  onClick={() => {
+                    clock.emit(
+                      playLoopCue === PLC.PLAY ? "pause" : "play",
+                      index
+                    );
+                    setPlayLoopCue(
+                      playLoopCue === PLC.PLAY ? PLC.PAUSE : PLC.PLAY
+                    );
+                  }}
+                >
+                  {playLoopCue === PLC.PLAY ? "Pause" : "Play"}
+                </button>
+              </>
+            )}
           </div>
           <div className={"rightwards"}>
-            <button onClick={() => clock.emit("insertFore", caption.index)}>
+            <button onClick={() => clock.emit("insertAfter", caption.uuid)}>
               &gt; Insert &gt;
             </button>
           </div>
           <div className={"leftwards"}>
             <button
               disabled={(backSize || 0) < 0.1}
-              onClick={() => clock.emit("gapBefore", caption.index)}
+              onClick={() => {
+                console.log("click");
+                clock.emit("gapBefore", uuid);
+              }}
             >
               &lt; Gap &lt;
             </button>
           </div>
-          <div>{modeDisplay} Mode</div>
+          <div>
+            {stateMessage ? <>{stateMessage}</> : <>{modeDisplay} Mode</>}
+          </div>
           <div className={"rightwards"}>
             <button
-              disabled={(foreSize || 0) < 0.1}
-              onClick={() => clock.emit("gapAfter", caption.index)}
+              disabled={(foreSize || 0) < 1.001}
+              onClick={() => clock.emit("gapAfter", uuid)}
             >
               &gt; Gap &gt;
             </button>
@@ -211,7 +328,7 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
             </button>
           </div>
           <div className={"rightwards"}>
-            <button onClick={() => clock.emit("cutToNext", caption)}>
+            <button onClick={() => clock.emit("cutToNext", caption.uuid)}>
               &gt; Cut to Next &gt;
             </button>
           </div>
