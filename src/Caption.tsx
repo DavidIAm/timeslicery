@@ -14,6 +14,8 @@ export interface Caption {
   index?: number;
   backSize?: number;
   foreSize?: number;
+  nextCaption?: string;
+  prevCaption?: string;
 }
 
 // export const cloneCaption: (
@@ -162,14 +164,22 @@ export class CaptionFile extends EventEmitter {
             c.start = prevEnd + 0.001;
             c.startRaw = format(c.start);
           }
+          c.prevCaption = arr[i - 1].uuid;
         }
         if (c.end <= c.start) {
           c.end = c.start + 0.001;
           c.endRaw = format(c.end);
         }
         c.backSize = (c.start - (i ? arr[i - 1].end : 0)) * 1000;
-        c.foreSize =
-          (arr[Math.min(i + 1, arr.length - 1)].start - c.end) * 1000;
+        // is this right two off?
+        if (i + 1 < arr.length - 1) {
+          c.foreSize = (arr[i + 1].start - c.end) * 1000;
+          c.nextCaption = arr[i + 1].uuid;
+        } else {
+          delete c.nextCaption;
+          delete c.foreSize;
+        }
+
         return c;
       });
   }

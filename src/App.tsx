@@ -22,7 +22,7 @@ function App() {
   );
 
   return (
-    <div tabIndex={2} className="App">
+    <div tabIndex={1} className="App">
       <header className="App-header">
         <EditContext.Provider value={editContextValue}>
           <UrlBox />

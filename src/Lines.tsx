@@ -94,8 +94,8 @@ export const Lines: React.FC<LinesProps> = ({ all }) => {
     //const stop = (event: KeyboardEvent) => event.stopPropagation();
     const emit = (event: KeyboardEvent) => {
       const { code } = event;
-      keyboard.emit("keyboard", event);
-      keyboard.emit(code, event);
+      keyboard.emit("keyboard", { zone: "lines", event });
+      keyboard.emit(`lines${code}`, event);
       console.log(event);
       event.stopPropagation();
     };
@@ -135,19 +135,26 @@ export const Lines: React.FC<LinesProps> = ({ all }) => {
     const moveUp = (event: KeyboardEvent) =>
       up(event, all, clock, position, changePosition);
     clock.on("moveDown", moveDown).on("moveUp", moveUp);
-    keyboard.on("KeyJ", moveDown).on("KeyK", moveUp).on("Space", play);
+    keyboard
+      .on("linesKeyJ", moveDown)
+      .on("linesKeyK", moveUp)
+      .on("linesSpace", play);
     return () => {
       clock.off("moveDown", moveDown).off("moveUp", moveUp);
-      keyboard.off("KeyJ", moveDown).off("KeyK", moveUp).off("Space", play);
+      keyboard
+        .off("linesKeyJ", moveDown)
+        .off("linesKeyK", moveUp)
+        .off("linesSpace", play);
     };
   }, [keyboard, clock, position, all, play]);
 
   useEffect(() => {
     if (position < 0 || !all[position]) return;
     clock.emit("jumpToCaption", all[position]);
+    const top = Math.max(position - 2, 0);
     setWindow({
-      top: Math.max(position - 1, 0),
-      bottom: Math.min(position + 5, all.length),
+      top,
+      bottom: Math.min(top + 5, all.length),
     });
   }, [position, all.length, all, clock]);
 
@@ -187,7 +194,6 @@ export const Lines: React.FC<LinesProps> = ({ all }) => {
         onMouseEnter={({ currentTarget }) => currentTarget.focus()}
         ref={setCaptionBlock}
         id={"captionBlock"}
-        style={{ cursor: "none" }}
       >
         <LineSet top={top} position={position} bottom={bottom} set={all} />
       </div>

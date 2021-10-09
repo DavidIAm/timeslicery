@@ -32,7 +32,7 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
     backSize: 0,
     index: -1,
   };
-  const { clock } = useContext(EditContext);
+  const { clock, keyboard } = useContext(EditContext);
   const [textArea, setTextArea] = useState<HTMLTextAreaElement | null>();
   const [speaking, setSpeaking] = useState<HTMLSelectElement | null>();
   const [voiceSet, dispatchVoice] = useReducer(
@@ -47,10 +47,13 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
     if (!speaking) return;
     speaking.value = voice || "space left blank";
   }, [voice, speaking]);
+
+  const [cueState, setCueState] = useState<CUE_STATE>(CUE_STATE.CUE_OFF);
   useEffect(() => {
     if (!textArea) return;
+    textArea.disabled = cueState !== CUE_STATE.CUE_OFF;
     textArea.value = text || "space left blank";
-  }, [text, textArea]);
+  }, [text, textArea, cueState]);
 
   const VoiceSetList = useMemo(
     () => (
@@ -69,18 +72,17 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
 
   useEffect(() => {
     clock.on("voices", dispatchVoice);
-    clock.on("Period", keyboardHandler);
-    clock.on("Comma", keyboardHandler);
-    clock.on("KeyB", keyboardHandler);
+    keyboard.on("linesPeriod", keyboardHandler);
+    keyboard.on("linesComma", keyboardHandler);
+    keyboard.on("linesKeyB", keyboardHandler);
     return (): void => {
       clock.off("voices", dispatchVoice);
-      clock.off("Period", keyboardHandler);
-      clock.off("Comma", keyboardHandler);
-      clock.off("KeyB", keyboardHandler);
+      keyboard.off("linesPeriod", keyboardHandler);
+      keyboard.off("linesComma", keyboardHandler);
+      keyboard.off("linesKeyB", keyboardHandler);
     };
-  }, [dispatchVoice, keyboardHandler, clock]);
+  }, [dispatchVoice, keyboardHandler, keyboard, clock]);
 
-  const [cueState, setCueState] = useState<CUE_STATE>(CUE_STATE.CUE_OFF);
   useEffect(() => {
     if (!clock) return;
     if (cueState === CUE_STATE.CUE_OFF) return;
@@ -88,25 +90,27 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
     const save = () => setCueState(CUE_STATE.CUE_SAVE);
     const cuein = () => setCueState(CUE_STATE.CUE_IN);
     const cuegap = () => setCueState(CUE_STATE.CUE_GAP);
-    clock.on("Escape", cancel);
-    clock.on("Enter", save);
-    clock.on("Space", cuein);
-    clock.on("Delete", cuegap);
+    keyboard.on("editEscape", cancel);
+    keyboard.on("editEnter", save);
+    keyboard.on("editSpace", cuein);
+    keyboard.on("editDelete", cuegap);
     return (): void => {
-      clock.off("Escape", cancel);
-      clock.off("Enter", save);
-      clock.off("Space", cuein);
-      clock.off("Delete", cuegap);
+      keyboard.off("editEscape", cancel);
+      keyboard.off("editEnter", save);
+      keyboard.off("editSpace", cuein);
+      keyboard.off("editDelete", cuegap);
     };
-  }, [cueState, clock]);
+  }, [cueState, keyboard, clock]);
 
   const [stateMessage, setStateMessage] = useState<string>();
   const [modeDisplay, setModeDisplay] = useState<string>();
   const [playLoopCue, setPlayLoopCue] = useState<PLC>(PLC.PAUSE);
-  const [looping, setLooping] = useState<boolean>(false);
+  const [hovering, setHovering] = useState<boolean>(false);
 
   useEffect(() => {
     switch (cueState) {
+      case CUE_STATE.CUE_OFF:
+        break;
       case CUE_STATE.CUE_START:
         setPlayLoopCue(PLC.CUE);
         clock.emit("jumpToCaption", caption);
@@ -116,10 +120,10 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
         break;
       case CUE_STATE.CUE_GAP:
         setStateMessage("CUE GAP");
-        clock.emit("cueOut");
+        clock.emit("cueOut", caption);
         break;
       case CUE_STATE.CUE_IN:
-        clock.emit("cueIn");
+        clock.emit("cueIn", caption);
         setStateMessage("CUE CAPTION IN");
         break;
       case CUE_STATE.CUE_CANCEL:
@@ -147,8 +151,8 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
   }, [cueState, clock]);
 
   useEffect(() => {
-    clock.emit("setLoop", looping);
-  }, [looping, clock]);
+    clock.emit("editBoxHover", hovering);
+  }, [hovering, clock]);
 
   useEffect(() => {
     clock.emit("PlayLoopCue", playLoopCue);
@@ -158,24 +162,42 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
         setModeDisplay("Pause");
         break;
       case PLC.PLAY:
-        if (looping) setModeDisplay("Play Loop");
-        else setModeDisplay("Play Through");
+        setModeDisplay(hovering ? "Play Loop" : "Play Through");
+        const { start, end } = caption;
+        clock.emit("setLoop", { looping: hovering, start, end });
         break;
       case PLC.ENTRY:
         setModeDisplay("Entry");
         break;
       case PLC.CUE:
         setModeDisplay("Cue");
+        clock.emit("setLoop", { looping: false });
         break;
     }
-  }, [playLoopCue, looping, clock]);
+  }, [playLoopCue, caption, hovering, clock]);
+
+  const [editBlock, setEditBlock] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!editBlock) return;
+    if (!keyboard) return;
+    const emit = (event: KeyboardEvent) => {
+      const { code } = event;
+      keyboard.emit("Keyboard", { zone: "edit", event });
+      keyboard.emit(`edit${code}`, event);
+      console.log("edit", event);
+      event.stopPropagation();
+    };
+    editBlock.addEventListener("keyup", emit);
+  }, [editBlock, keyboard]);
+
   return (
     <>
       <div
-        tabIndex={2}
-        onMouseLeave={() => setLooping(false)}
+        tabIndex={3}
+        ref={setEditBlock}
+        onMouseLeave={() => setHovering(false)}
         onMouseEnter={() => {
-          setLooping(true);
+          setHovering(true);
           textArea?.focus();
         }}
       >
@@ -340,8 +362,6 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
               cols={40}
               onKeyPressCapture={console.log}
               onKeyDown={console.log}
-              onFocus={() => clock.emit("setLoop", true)}
-              onBlur={() => clock.emit("setLoop", false)}
               defaultValue={""}
             />
           </div>

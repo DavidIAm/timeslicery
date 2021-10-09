@@ -47,6 +47,25 @@ export const MutationHandlers: React.FC<{
     clock.on("gapAfter", gapBefore);
     return (): void => void clock.off("gapAfter", gapBefore);
   }, [clock, apply]);
+
+  useEffect(() => {
+    const newStartFor: (o: {
+      uuid: string;
+      time: number;
+      note: string;
+    }) => void = ({ uuid, time, note }) =>
+      apply(uuid, "new start : " + note, () => ({ start: time }));
+    clock.on("newStartFor", newStartFor);
+    return (): void => void clock.off("newStartFor", newStartFor);
+  }, [clock, apply]);
+  useEffect(() => {
+    const newEndFor: (o: { uuid: string; time: number; note: string }) => void =
+      ({ uuid, time, note }) =>
+        apply(uuid, "new end : " + note, () => ({ start: time }));
+    clock.on("newEndFor", newEndFor);
+    return (): void => void clock.off("newEndFor", newEndFor);
+  }, [clock, apply]);
+
   return <>{children}</>;
 };
 
