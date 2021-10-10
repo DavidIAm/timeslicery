@@ -22,18 +22,15 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
   const { clock } = useContext(EditContext);
 
   const [volume, setVolume] = useState<number>(0.5);
-  useEffect(() => console.log("volume change"), [volume]);
   const [audioPlayer, setAudioPlayer] = useState<HTMLAudioElement | null>();
-  useEffect(() => console.log("audioPlayer change"), [audioPlayer]);
   useEffect(() => {
-    console.log("change audioplayer/clock trigger");
     if (!audioPlayer) return;
     if (!clock) return;
     clock.emit("newAudioPlayer", audioPlayer);
   }, [audioPlayer, clock]);
   useEffect(() => {
     if (!audioPlayer) return;
-    console.log("audioPlayerVolume");
+    console.log("audioPlayerVolume", audioPlayer.volume, volume);
     audioPlayer.volume = volume;
   }, [audioPlayer, volume]);
 
@@ -56,7 +53,10 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
   );
 
   const [playbackRate, setPlaybackRate] = useState<number>(1);
-  useEffect(() => console.log("playbackRate change"), [playbackRate]);
+  //useEffect(() => console.log("clock change"), [clock]);
+  //useEffect(() => console.log("playbackRate change"), [playbackRate]);
+  //useEffect(() => console.log("volume change"), [volume]);
+  //useEffect(() => console.log("audioPlayer change"), [audioPlayer]);
   useEffect(() => {
     const toggler = (force: boolean) => togglePlay(force);
     clock.on("blurPause", dispatchBlurPause);
@@ -70,17 +70,12 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
   }, [clock]);
 
   const cueIn = useCallback(
-    (caption) => {
+    (uuid) => {
       if (!audioPlayer) return;
-      if (!caption) return;
+      if (!uuid) return;
       console.log("CUE IN", format(audioPlayer.currentTime));
       clock.emit("newEndFor", {
-        uuid: caption,
-        time: audioPlayer.currentTime,
-        note: "cue in",
-      });
-      clock.emit("newStartFor", {
-        uuid: caption.nextCaption,
+        uuid,
         time: audioPlayer.currentTime,
         note: "cue in",
       });
@@ -88,13 +83,15 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
     [clock, audioPlayer]
   );
   const cueOut = useCallback(
-    (caption) => {
+    (uuid) => {
       if (!audioPlayer) return;
-      if (!caption) return;
+      if (!clock) return;
       console.log("CUE OUT", format(audioPlayer.currentTime));
-      clock.emit("newEndFor", caption, audioPlayer.currentTime);
-      const { start, end } = caption;
-      setLoop({ looping: true, start, end });
+      clock.emit("newEndFor", {
+        uuid,
+        time: audioPlayer.currentTime,
+        note: "cue out",
+      });
     },
     [clock, audioPlayer]
   );
@@ -109,7 +106,6 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
 
   useEffect(() => {
     if (!audioPlayer) return;
-    console.log("play/blur hook");
     if (blurPause) {
       audioPlayer.pause();
       clock.emit("time", audioPlayer.currentTime);
@@ -122,7 +118,6 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
 
   useEffect(() => {
     if (!audioPlayer) return;
-    console.log("playback Rate hook");
     audioPlayer.playbackRate = playbackRate;
   }, [audioPlayer, playbackRate]);
 
@@ -160,7 +155,6 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
 
   useEffect(() => {
     if (!audioPlayer) return;
-    console.log("setStart listener");
     const setStart = (time: number) => {
       console.log("setting time with setStart");
       audioPlayer.currentTime = time;
@@ -202,6 +196,7 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
   }, [jumpToHandler, clock]);
 
   const emitTime = useCallback((t) => clock.emit("time", t), [clock]);
+
   return (
     <>
       <ReactAudioPlayer
@@ -211,6 +206,7 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
         }}
         listenInterval={listenInterval}
         onListen={emitTime}
+        volume={volume}
         src={audio}
         controls
       />

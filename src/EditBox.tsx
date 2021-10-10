@@ -120,10 +120,10 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
         break;
       case CUE_STATE.CUE_GAP:
         setStateMessage("CUE GAP");
-        clock.emit("cueOut", caption);
+        //        clock.emit("cueOut", caption.uuid);
         break;
       case CUE_STATE.CUE_IN:
-        clock.emit("cueIn", caption);
+        clock.emit("cueIn", caption.uuid);
         setStateMessage("CUE CAPTION IN");
         break;
       case CUE_STATE.CUE_CANCEL:
@@ -175,6 +175,30 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
         break;
     }
   }, [playLoopCue, caption, hovering, clock]);
+
+  useEffect(() => {}, [clock]);
+
+  useEffect(() => {
+    if (cueState === CUE_STATE.CUE_OFF) return;
+    if (!caption.uuid) return;
+    if (!caption.nextCaption) return;
+    if (!clock) return;
+    const gap_in_state_changer = (time: number) => {
+      switch (cueState) {
+        case CUE_STATE.CUE_GAP:
+          clock.emit("newStartFor", {
+            uuid: caption.nextCaption,
+            time: time + 0.01,
+          });
+          break;
+        case CUE_STATE.CUE_IN:
+          clock.emit("newEndFor", { uuid: caption.uuid, time: time + 0.01 });
+          break;
+      }
+    };
+    clock.on("time", gap_in_state_changer);
+    return (): void => void clock.off("time", gap_in_state_changer);
+  }, [caption?.nextCaption, caption?.uuid, cueState, clock]);
 
   const [editBlock, setEditBlock] = useState<HTMLDivElement | null>(null);
   useEffect(() => {

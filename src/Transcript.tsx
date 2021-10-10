@@ -6,9 +6,9 @@ import React, {
 } from "react";
 import EventEmitter from "events";
 import ReactAudioPlayer from "react-audio-player";
-import { CaptionFile } from "./Caption";
 import { Lines } from "./Lines";
 import { format } from "./Util";
+import { CaptionFile } from "./CaptionFile";
 
 export const EditContext = createContext<{
   audio?: ReactAudioPlayer;

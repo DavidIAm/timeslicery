@@ -1,6 +1,7 @@
 import React from "react";
-import { Caption, makeMutation, Mutation, MutationActions } from "./Caption";
+import { Caption } from "./Caption";
 import { v4 } from "uuid";
+import { makeMutation, Mutation, MutationActions } from "./Mutation";
 
 export function Utf8ArrayToStr(array: Uint8Array): string {
   var out, i, len, c;

@@ -1,73 +1,19 @@
 import React, {
   Reducer,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useReducer,
   useState,
 } from "react";
-import { EditContext, Transcript } from "./Transcript";
-import {
-  Caption,
-  CaptionFile,
-  makeMutation,
-  Mutation,
-  MutationActions,
-} from "./Caption";
+import { Transcript } from "./Transcript";
+import { Caption } from "./Caption";
 import { parserFactory } from "./Util";
 import { MediaBox } from "./MediaBox";
 import { v4 } from "uuid";
-
-export const MutationHandlers: React.FC<{
-  apply: (
-    uuid: string,
-    note: string,
-    apply: (c: Caption) => Partial<Caption>
-  ) => void;
-}> = ({ apply, children }) => {
-  const { clock } = useContext(EditContext);
-
-  useEffect(() => {
-    if (!clock) return;
-    const gapBefore = (uuid: string) =>
-      apply(uuid, "consume gap before", (c) => ({
-        start: c.start - (c?.backSize || 0) / 1000,
-      }));
-    clock.on("gapBefore", gapBefore);
-    return (): void => void clock.off("gapBefore", gapBefore);
-  }, [clock, apply]);
-
-  useEffect(() => {
-    if (!clock) return;
-    const gapBefore = (uuid: string) =>
-      apply(uuid, "consume gap after", (c) => ({
-        end: c.end + (c?.foreSize || 0) / 1000,
-      }));
-    clock.on("gapAfter", gapBefore);
-    return (): void => void clock.off("gapAfter", gapBefore);
-  }, [clock, apply]);
-
-  useEffect(() => {
-    const newStartFor: (o: {
-      uuid: string;
-      time: number;
-      note: string;
-    }) => void = ({ uuid, time, note }) =>
-      apply(uuid, "new start : " + note, () => ({ start: time }));
-    clock.on("newStartFor", newStartFor);
-    return (): void => void clock.off("newStartFor", newStartFor);
-  }, [clock, apply]);
-  useEffect(() => {
-    const newEndFor: (o: { uuid: string; time: number; note: string }) => void =
-      ({ uuid, time, note }) =>
-        apply(uuid, "new end : " + note, () => ({ start: time }));
-    clock.on("newEndFor", newEndFor);
-    return (): void => void clock.off("newEndFor", newEndFor);
-  }, [clock, apply]);
-
-  return <>{children}</>;
-};
+import { CaptionFile } from "./CaptionFile";
+import { makeMutation, Mutation, MutationActions } from "./Mutation";
+import { MutationHandlers } from "./MutationHandlers";
 
 export const UrlBox: React.FC = () => {
   const [src, setSrc] = useState<string>("/S3E3_Get_Help.mp3");
@@ -76,28 +22,33 @@ export const UrlBox: React.FC = () => {
   );
 
   const CfReducer: Reducer<CaptionFile, Mutation> = (cf, mutation) =>
-    cf.modify(mutation);
+    cf.applyMutation(mutation);
   const [captions, dispatch] = useReducer(CfReducer, [], (ca) => {
     return new CaptionFile(ca);
   });
 
-  const apply = useCallback(
+  const replaceMutationFromPartial = useCallback(
     (
       uuid: string,
       note: string,
       whatToDo: (c: Caption) => Partial<Caption>
     ): void => {
-      const c = captions.byUuid(uuid);
-      if (!c) throw new Error(`Couldn't find caption for ${uuid}`);
-      dispatch(
-        makeMutation({
-          action: MutationActions.REPLACE,
-          after: Object.assign({}, c, whatToDo(c), { uuid: v4() }),
-          before: c,
-          note,
-          when: new Date(),
-        })
-      );
+      captions
+        .byUuid(uuid)
+        .then((c) =>
+          dispatch(
+            makeMutation({
+              action: MutationActions.REPLACE,
+              after: Object.assign({}, c, whatToDo(c), { uuid: v4() }),
+              before: c,
+              note,
+              when: new Date(),
+            })
+          )
+        )
+        .catch((e) => {
+          throw e;
+        });
     },
     [captions, dispatch]
   );
@@ -166,7 +117,9 @@ export const UrlBox: React.FC = () => {
         />
       </div>
       <MediaBox audio={src} />
-      <MutationHandlers apply={apply} />
+      <MutationHandlers
+        replaceMutationFromPartial={replaceMutationFromPartial}
+      />
       <Transcript transcript={captions} />
     </>
   );
