@@ -21,9 +21,19 @@ export const UrlBox: React.FC = () => {
     "/S3E3_Get_Help_fuckedup.vtt"
   );
 
-  const CfReducer: Reducer<CaptionFile, Mutation> = (cf, mutation) =>
-    cf.applyMutation(mutation);
-  const [captions, dispatch] = useReducer(CfReducer, [], (ca) => {
+  const CfReducer: Reducer<CaptionFile, Mutation> = (cf, mutation) => {
+    const start = Date.now();
+    const ccf = cf.applyMutation(mutation);
+    console.log(
+      "applying mutation and took",
+      mutation.action,
+      Date.now() - start,
+      ccf.changes.length
+    );
+    return ccf;
+  };
+  const [captionFile, dispatch] = useReducer(CfReducer, void 0, (ca) => {
+    console.log("new caption file from reducer init");
     return new CaptionFile(ca);
   });
 
@@ -33,7 +43,7 @@ export const UrlBox: React.FC = () => {
       note: string,
       whatToDo: (c: Caption) => Partial<Caption>
     ): void => {
-      captions
+      captionFile
         .byUuid(uuid)
         .then((c) =>
           dispatch(
@@ -50,7 +60,7 @@ export const UrlBox: React.FC = () => {
           throw e;
         });
     },
-    [captions, dispatch]
+    [captionFile, dispatch]
   );
 
   useEffect(() => {
@@ -63,15 +73,15 @@ export const UrlBox: React.FC = () => {
   const noteSet = useMemo(
     () => (
       <>
-        {captions.changes
+        {captionFile.changes
           .map((m, i) => (
             <p key={v4()}>
               {i}: {m.note}
             </p>
           ))
-          .slice(Math.max(captions.changes.length - 10, 0))}
+          .slice(Math.max(captionFile.changes.length - 10, 0))}
         <hr />
-        {captions.undoneChanges
+        {captionFile.undoneChanges
           .map((m, i) => (
             <p key={v4()}>
               {i}: {m.note}
@@ -80,7 +90,7 @@ export const UrlBox: React.FC = () => {
           .slice(Math.max(0, 5))}
       </>
     ),
-    [captions.changes, captions.undoneChanges]
+    [captionFile.changes, captionFile.undoneChanges]
   );
 
   return (
@@ -120,7 +130,7 @@ export const UrlBox: React.FC = () => {
       <MutationHandlers
         replaceMutationFromPartial={replaceMutationFromPartial}
       />
-      <Transcript transcript={captions} />
+      <Transcript transcript={captionFile} />
     </>
   );
 };

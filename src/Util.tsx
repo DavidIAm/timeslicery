@@ -1,7 +1,13 @@
-import React from "react";
+import React, {
+  DependencyList,
+  useCallback,
+  useContext,
+  useEffect,
+} from "react";
 import { Caption } from "./Caption";
 import { v4 } from "uuid";
 import { makeMutation, Mutation, MutationActions } from "./Mutation";
+import { EditContext } from "./Transcript";
 
 export function Utf8ArrayToStr(array: Uint8Array): string {
   var out, i, len, c;
@@ -110,4 +116,33 @@ export const format = (raw: number): string => {
   return `${hours.toFixed(0).padStart(2, "0")}:${minutes
     .toFixed(0)
     .padStart(2, "0")}:${seconds.toFixed(3).padStart(6, "0")}`;
+};
+
+export const useClock: (
+  eventName: string | symbol,
+  eventHandler: (...args: any[]) => void,
+  deps: DependencyList
+) => void = (eventName, eventHandler, deps) => {
+  const { clock } = useContext(EditContext);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const handler = useCallback(eventHandler, [eventHandler, ...deps]);
+  useEffect(() => {
+    clock.on(eventName, handler);
+    return (): void => void clock.off(eventName, handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clock, handler, eventName, ...deps]);
+};
+export const useKeyboard: (
+  eventName: string | symbol,
+  eventHandler: (...args: any[]) => void,
+  deps: DependencyList
+) => void = (eventName, eventHandler, deps) => {
+  const { keyboard } = useContext(EditContext);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const handler = useCallback(eventHandler, [eventHandler, ...deps]);
+  useEffect(() => {
+    keyboard.on(eventName, handler);
+    return (): void => void keyboard.off(eventName, handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keyboard, handler, eventName, ...deps]);
 };

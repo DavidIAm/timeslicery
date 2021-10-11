@@ -1,6 +1,7 @@
 import { v4 } from "uuid";
 import { format } from "./Util";
 import { Caption } from "./Caption";
+import { CaptionSet } from "./CaptionSet";
 
 export enum MutationActions {
   CLEAR,
@@ -10,7 +11,11 @@ export enum MutationActions {
   BULK_ADD,
 }
 
-export type CompletedMutation = Mutation & WithDependents;
+export type CompletedMutation = Mutation & WithDependents & WithCaptionSet;
+export type DependedMutation = Mutation & WithDependents;
+export interface WithCaptionSet {
+  captionSet: CaptionSet;
+}
 export interface WithDependents {
   dependents: Mutation[];
 }

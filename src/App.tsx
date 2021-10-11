@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import "./App.css";
 import { EditContext } from "./Transcript";
 import EventEmitter from "events";
@@ -8,17 +8,9 @@ function App() {
   const keyboard = useMemo(() => new EventEmitter(), []);
   const clock = useMemo(() => new EventEmitter(), []);
 
-  const [audioPlayer, setAudioPlayer] = useState<HTMLAudioElement>();
-  useEffect(() => {
-    if (!clock) return;
-    if (!setAudioPlayer) return;
-    clock.on("setAudioPlayer", setAudioPlayer);
-    return (): void => void clock.off("setAudioPlayer", setAudioPlayer);
-  }, [clock, setAudioPlayer]);
-
   const editContextValue = useMemo(
-    () => ({ audioPlayer, clock, keyboard }),
-    [clock, keyboard, audioPlayer]
+    () => ({ clock, keyboard }),
+    [clock, keyboard]
   );
 
   return (

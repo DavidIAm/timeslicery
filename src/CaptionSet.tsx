@@ -1,35 +1,38 @@
 import { format } from "./Util";
 import { Caption } from "./Caption";
-import { CaptionFile } from "./CaptionFile";
 import {
   CompletedMutation,
+  DependedMutation,
   makeMutation,
   Mutation,
   MutationActions,
 } from "./Mutation";
+import { v4 } from "uuid";
 
 export class CaptionSet {
   private readonly captions: Caption[];
-  private readonly changes: CompletedMutation[];
 
-  constructor(changes: CompletedMutation[]) {
-    this.captions = CaptionSet.applyChanges(changes);
-    this.changes = changes;
+  constructor(initCaptions: Caption[]) {
+    this.captions = initCaptions;
   }
 
+  // constructor(changes: CompletedMutation[], initCaptions?: Caption[]) {
+  //   const start = Date.now();
+  // }
+  //
+  // clone(): CaptionSet {
+  //   return new CaptionSet([], [...this.captions.map((c) => ({ ...c }))]);
+  // }
+  //
   getCaptions(): Caption[] {
     return this.captions;
   }
 
-  applyMutations(changes: Mutation[]): CaptionSet {
-    return new CaptionSet([
-      ...this.changes,
-      ...changes.map((mutation) =>
-        CaptionSet.completeMutation(mutation, this.captions)
-      ),
-    ]);
-  }
-
+  //
+  // applyMutations(changes: CompletedMutation[]): CaptionSet {
+  //   return new CaptionSet(changes, this.captions);
+  // }
+  //
   byUuid(uuid: string): Promise<Caption> {
     return new Promise<Caption>((resolve, reject) => {
       const c = this.captions.find((c) => c.uuid === uuid);
@@ -38,16 +41,19 @@ export class CaptionSet {
     });
   }
 
+  //
+  // completeMutation(mutation: Mutation): CompletedMutation {
+  //   return CaptionSet.completeMutation(mutation, this.captions);
+  // }
+
   static startPrevMod(current: Caption, prev?: Caption): Partial<Caption> {
     const start =
       prev && prev.end >= current.start ? prev.end + 0.001 : current.start;
     const startRaw = format(start);
-    const prevCaption = prev && prev.uuid;
-    const backSize = (start - ((prev && prev.end) || 0)) * 1000;
-    return { start, startRaw, prevCaption, backSize };
+    return { start, startRaw };
   }
 
-  static endMod(current: Caption, next?: Caption): Partial<Caption> {
+  static metaEndFields(current: Caption, next?: Caption) {
     const endRaw = format(current.end);
     const nextCaption = next && next.uuid;
     // predict the gap will be 0.001 if next start is negative offset
@@ -57,38 +63,66 @@ export class CaptionSet {
     return { endRaw, nextCaption, foreSize };
   }
 
+  static metaStartFields(current: Caption, prev?: Caption) {
+    const startRaw = format(current.start);
+    const prevCaption = prev && prev.uuid;
+    const backSize = (current.start - ((prev && prev.end) || 0)) * 1000;
+    return { startRaw, prevCaption, backSize };
+  }
+
+  static metaUpdate(captions: Caption[]): Caption[] {
+    return captions
+      .sort((a, b) => a.start - b.start)
+      .map(
+        (c, i, arr) =>
+          Object.assign(
+            c,
+            { index: i },
+            CaptionSet.metaStartFields(c, i > 0 ? arr[i - 1] : void 0),
+            CaptionSet.metaEndFields(
+              c,
+              i + 1 < arr.length ? arr[i + 1] : void 0
+            )
+          ) as Caption
+      );
+  }
+
   static conform(captions: Caption[]): Mutation[] {
     return (
       captions
         .sort((a, b) => a.start - b.start)
         //.flatMap((c, i, a) => (i > 0 && c.uuid === a[i - 1].uuid ? [] : [c])) // DEDUPLICATE
-        .map((c, i, arr) =>
-          makeMutation({
+        .map((c, i, arr) => ({
+          before: c,
+          after: Object.assign(
+            { uuid: v4() },
+            c,
+            CaptionSet.startPrevMod(c, i > 0 ? arr[i - 1] : void 0)
+          ) as Caption,
+        }))
+        .filter(({ before, after }) => !Caption.equals(before, after))
+        .map(({ before, after }) => {
+          return makeMutation({
             action: MutationActions.REPLACE,
-            before: c,
             note: "conformation adjust",
-            after: Object.assign(
-              {},
-              c,
-              { index: i },
-              CaptionSet.startPrevMod(c, i > 0 ? arr[i - 1] : void 0),
-              CaptionSet.endMod(c, i + 1 < arr.length ? arr[i + 1] : void 0)
-            ),
-          })
-        )
+            before,
+            after,
+          });
+        })
     );
-  }
-
-  static newCaptionFile(changes: CompletedMutation[]): CaptionFile {
-    return new CaptionFile(changes);
   }
 
   static completeMutation(
     mutation: Mutation,
-    captions: Caption[]
+    captionSet: CaptionSet = new CaptionSet([])
   ): CompletedMutation {
-    return Object.assign(mutation, {
-      dependents: CaptionSet.getDependents(mutation, captions),
+    const cloned = [...captionSet.getCaptions().map((c) => ({ ...c }))];
+    const dependents = Object.assign(mutation, {
+      dependents: CaptionSet.getDependents(mutation, cloned),
+    });
+
+    return Object.assign(dependents, {
+      captionSet: CaptionSet.applyChanges([dependents], cloned),
     });
   }
 
@@ -115,14 +149,21 @@ export class CaptionSet {
     }
   }
 
-  static applyChanges(changes: CompletedMutation[]) {
-    return changes
-      .flatMap((m) => [m, ...(m.dependents || [])])
-      .reduce<Caption[]>(
-        (cf, mutation: Mutation): Caption[] =>
-          CaptionSet.applyMutation(mutation, cf),
-        []
-      );
+  static applyChanges(
+    changes: DependedMutation[],
+    initCaptions: Caption[] = []
+  ): CaptionSet {
+    return new CaptionSet(
+      CaptionSet.metaUpdate(
+        changes
+          .flatMap((m) => [m, ...(m.dependents || [])])
+          .reduce<Caption[]>(
+            (cf, mutation: Mutation): Caption[] =>
+              CaptionSet.applyMutation(mutation, cf),
+            initCaptions
+          )
+      )
+    );
   }
 
   static mutate_add(mutation: Mutation, captions: Caption[]): Caption[] {

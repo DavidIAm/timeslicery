@@ -3,17 +3,19 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useReducer,
   useState,
 } from "react";
-import { Caption } from "./Caption";
+import { Caption, CUE_STATE } from "./Caption";
 import { EditContext } from "./Transcript";
 import { LineSet } from "./LineSet";
 import { EditBox } from "./EditBox";
 import EventEmitter from "events";
+import { useClock } from "./Util";
 
 export type LinesProps = {
-  all: Caption[];
+  captions: Caption[];
 };
 
 const offsets: {
@@ -83,9 +85,24 @@ export function down(
   clock.emit("jumpToCaption", caption);
 }
 
-export const Lines: React.FC<LinesProps> = ({ all }) => {
+export const Lines: React.FC<LinesProps> = ({ captions }) => {
   const { keyboard, clock } = useContext(EditContext);
   const [captionBlock, setCaptionBlock] = useState<HTMLDivElement | null>();
+  const [cueState, setCueState] = useState<CUE_STATE>(CUE_STATE.CUE_OFF);
+  const [{ top, bottom }, setWindow] = useState<{
+    top: number;
+    bottom: number;
+  }>(() => ({ top: 0, bottom: 5 }));
+
+  useClock("cueState", setCueState, []);
+
+  const voiceSet = useMemo(
+    () => new Set(captions.map((c) => c.voice)),
+    [captions]
+  );
+  useEffect(() => {
+    clock.emit("voiceSet", voiceSet);
+  }, [clock, voiceSet]);
 
   useEffect(() => {
     if (!captionBlock) return;
@@ -119,11 +136,6 @@ export const Lines: React.FC<LinesProps> = ({ all }) => {
 
   const [position, changePosition] = useReducer(positionReducer, -1, (t) => t);
 
-  const [{ top, bottom }, setWindow] = useState<{
-    top: number;
-    bottom: number;
-  }>(() => ({ top: 0, bottom: 5 }));
-
   const play = useCallback<(e: KeyboardEvent) => void>(
     () => void clock.emit("togglePlay"),
     [clock]
@@ -131,9 +143,9 @@ export const Lines: React.FC<LinesProps> = ({ all }) => {
 
   useEffect(() => {
     const moveDown = (event: KeyboardEvent) =>
-      down(event, all, clock, position, changePosition);
+      down(event, captions, clock, position, changePosition);
     const moveUp = (event: KeyboardEvent) =>
-      up(event, all, clock, position, changePosition);
+      up(event, captions, clock, position, changePosition);
     clock.on("moveDown", moveDown).on("moveUp", moveUp);
     keyboard
       .on("linesKeyJ", moveDown)
@@ -146,56 +158,54 @@ export const Lines: React.FC<LinesProps> = ({ all }) => {
         .off("linesKeyK", moveUp)
         .off("linesSpace", play);
     };
-  }, [keyboard, clock, position, all, play]);
+  }, [keyboard, clock, position, captions, play]);
 
   useEffect(() => {
-    if (position < 0 || !all[position]) return;
-    clock.emit("jumpToCaption", all[position]);
+    if (position < 0 || !captions[position]) return;
+    clock.emit("jumpToCaption", captions[position]);
     const top = Math.max(position - 2, 0);
     setWindow({
       top,
-      bottom: Math.min(top + 5, all.length),
+      bottom: Math.min(top + 5, captions.length),
     });
-  }, [position, all.length, all, clock]);
+  }, [position, captions.length, captions, clock]);
 
   useEffect(() => {
     if (!clock) return;
-    if (!all) return;
+    if (!captions) return;
     if (!bottom) return;
     const timeListener = (currentTime: number): void => {
       const inThisCaption: (c: Caption) => boolean = ({ end, start }) =>
         currentTime < end && currentTime >= start;
 
       const positionOf = () => {
-        if (currentTime <= (all[0]?.end || 0)) return 0;
-        const sliced = all.slice(top, bottom).find(inThisCaption)?.index;
+        if (currentTime <= (captions[0]?.end || 0)) return 0;
+        const sliced = captions.slice(top, bottom).find(inThisCaption)?.index;
         if (typeof sliced === "number") return sliced;
-        const scanned = all.find(inThisCaption)?.index;
+        const scanned = captions.find(inThisCaption)?.index;
         if (typeof scanned === "number") return scanned;
         return position;
       };
       changePosition({ abs: positionOf() });
     };
-    const voiceListener = (voices: string[]): void =>
-      console.log("voices", voices);
-    clock.on("time", timeListener);
-    clock.on("voices", voiceListener);
-    return (): void => {
-      clock.off("time", timeListener);
-      clock.off("voices", voiceListener);
-    };
-  }, [clock, all, position, bottom, top]);
+    if (cueState === CUE_STATE.CUE_OFF) {
+      clock.on("time", timeListener);
+      return (): void => {
+        clock.off("time", timeListener);
+      };
+    }
+  }, [clock, captions, position, bottom, top, cueState]);
 
   return (
     <>
-      <EditBox caption={all[Math.max(position, 0)]} />
+      <EditBox caption={captions[Math.max(position, 0)]} />
       <div
         tabIndex={1}
         onMouseEnter={({ currentTarget }) => currentTarget.focus()}
         ref={setCaptionBlock}
         id={"captionBlock"}
       >
-        <LineSet top={top} position={position} bottom={bottom} set={all} />
+        <LineSet top={top} position={position} bottom={bottom} set={captions} />
       </div>
     </>
   );

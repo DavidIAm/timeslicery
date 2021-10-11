@@ -1,9 +1,9 @@
 export interface Caption {
   uuid: string;
-  startRaw: string;
-  endRaw: string;
+  startRaw?: string;
+  endRaw?: string;
   align: string;
-  voice: string;
+  voice?: string;
   text: string;
   start: number;
   end: number;
@@ -12,6 +12,31 @@ export interface Caption {
   foreSize?: number;
   nextCaption?: string;
   prevCaption?: string;
+}
+
+const ignoreFields = [
+  "uuid",
+  "index",
+  "backSize",
+  "foreSize",
+  "nextCaption",
+  "prevCaption",
+];
+
+export class Caption {
+  static equals(a: Caption, b: Caption) {
+    const akeys = Object.keys(a).filter(
+      (k) => !ignoreFields.includes(k)
+    ) as (keyof Caption)[];
+    const bkeys = Object.keys(b).filter(
+      (k) => !ignoreFields.includes(k)
+    ) as (keyof Caption)[];
+    if (akeys.length !== bkeys.length) return false;
+    if (akeys.find((ak) => !bkeys.includes(ak))) return false;
+    if (bkeys.find((bk) => !akeys.includes(bk))) return false;
+    if (akeys.find((ak) => a[ak] !== b[ak])) return false;
+    return true;
+  }
 }
 
 // export const cloneCaption: (

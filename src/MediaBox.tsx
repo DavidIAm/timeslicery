@@ -8,12 +8,12 @@ import React, {
 import { EditContext } from "./Transcript";
 import { Caption } from "./Caption";
 import ReactAudioPlayer from "react-audio-player";
-import { format } from "./Util";
+import { useClock } from "./Util";
 
 export type LoopState = {
   looping: Boolean;
-  start: number;
-  end: number;
+  start?: number;
+  end?: number;
 };
 
 const listenInterval = 200;
@@ -21,27 +21,10 @@ const listenInterval = 200;
 export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
   const { clock } = useContext(EditContext);
 
-  const [volume, setVolume] = useState<number>(0.5);
   const [audioPlayer, setAudioPlayer] = useState<HTMLAudioElement | null>();
-  useEffect(() => {
-    if (!audioPlayer) return;
-    if (!clock) return;
-    clock.emit("newAudioPlayer", audioPlayer);
-  }, [audioPlayer, clock]);
-  useEffect(() => {
-    if (!audioPlayer) return;
-    console.log("audioPlayerVolume", audioPlayer.volume, volume);
-    audioPlayer.volume = volume;
-  }, [audioPlayer, volume]);
-
-  const [blurPause, dispatchBlurPause] = useReducer<
-    (p: boolean, f: boolean) => boolean,
-    boolean
-  >(
-    (p, f) => f,
-    false,
-    (t) => t
-  );
+  const [playbackRate, setPlaybackRate] = useState<number>(1);
+  const [blurPause, setBlurPause] = useState(false);
+  const [loop, setLoop] = useState<LoopState>({ looping: false });
 
   const [play, togglePlay] = useReducer<
     (p: boolean, f: boolean) => boolean,
@@ -52,59 +35,25 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
     (t) => t
   );
 
-  const [playbackRate, setPlaybackRate] = useState<number>(1);
   //useEffect(() => console.log("clock change"), [clock]);
   //useEffect(() => console.log("playbackRate change"), [playbackRate]);
-  //useEffect(() => console.log("volume change"), [volume]);
   //useEffect(() => console.log("audioPlayer change"), [audioPlayer]);
-  useEffect(() => {
-    const toggler = (force: boolean) => togglePlay(force);
-    clock.on("blurPause", dispatchBlurPause);
-    clock.on("playbackRate", setPlaybackRate);
-    clock.on("togglePlay", toggler);
-    return (): void => {
-      clock.off("togglePlay", toggler);
-      clock.off("playbackRate", setPlaybackRate);
-      clock.off("blurPause", dispatchBlurPause);
-    };
-  }, [clock]);
-
-  const cueIn = useCallback(
-    (uuid) => {
-      if (!audioPlayer) return;
-      if (!uuid) return;
-      console.log("CUE IN", format(audioPlayer.currentTime));
-      clock.emit("newEndFor", {
-        uuid,
-        time: audioPlayer.currentTime,
-        note: "cue in",
-      });
-    },
-    [clock, audioPlayer]
-  );
-  const cueOut = useCallback(
-    (uuid) => {
-      if (!audioPlayer) return;
-      if (!clock) return;
-      console.log("CUE OUT", format(audioPlayer.currentTime));
-      clock.emit("newEndFor", {
-        uuid,
-        time: audioPlayer.currentTime,
-        note: "cue out",
-      });
-    },
-    [clock, audioPlayer]
-  );
-  useEffect(() => {
-    clock.on("cueIn", cueIn);
-    clock.on("cueOut", cueOut);
-    return (): void => {
-      clock.off("cueIn", cueIn);
-      clock.off("cueOut", cueOut);
-    };
-  }, [clock, cueIn, cueOut]);
+  //useEffect(() => console.log("play change"), [play]);
+  //useEffect(() => console.log("blurPause change"), [blurPause]);
 
   useEffect(() => {
+    if (!audioPlayer) return;
+    if (!clock) return;
+    clock.emit("newAudioPlayer", audioPlayer);
+  }, [audioPlayer, clock]);
+
+  useClock("blurPause", setBlurPause, []);
+  useClock("playbackRate", setPlaybackRate, []);
+  useClock("togglePlay", (f) => console.log("the toggle play", f), []);
+  useClock("togglePlay", togglePlay, []);
+
+  useEffect(() => {
+    if (!clock) return;
     if (!audioPlayer) return;
     if (blurPause) {
       audioPlayer.pause();
@@ -122,11 +71,6 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
   }, [audioPlayer, playbackRate]);
 
   // the loop toggle
-  const [loop, setLoop] = useState<LoopState>({
-    looping: false,
-    start: 0,
-    end: 0,
-  });
   useEffect(() => {
     clock.on("setLoop", setLoop);
     return (): void => void clock.off("setLoop", setLoop);
@@ -135,16 +79,18 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
   useEffect(() => {
     if (!audioPlayer) return;
     if (!loop.looping) return;
+    if (!loop.start) return;
+    if (!loop.end) return;
     if (!play) return;
     let interval: number;
     let timeout = window.setTimeout(() => {
-      timeout = 0;
-      audioPlayer.currentTime = loop.start;
+      timeout = 0 || 0;
+      audioPlayer.currentTime = loop.start || 0;
       console.log("loop initial backToStart");
       interval = window.setInterval(() => {
         console.log("loop backToStart");
-        audioPlayer.currentTime = loop.start;
-      }, ((loop.end - loop.start) * 1000) / playbackRate);
+        audioPlayer.currentTime = loop.start || 0;
+      }, (((loop.end || 0) - (loop.start || 0)) * 1000) / playbackRate);
     }, ((loop.end - audioPlayer.currentTime) * 1000) / playbackRate);
     return (): void => {
       console.log("loop clear");
@@ -205,48 +151,12 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
             setAudioPlayer(e?.audioEl.current);
         }}
         listenInterval={listenInterval}
+        volume={0.1}
         onListen={emitTime}
-        volume={volume}
+        onVolumeChanged={console.log}
         src={audio}
         controls
       />
     </>
   );
-};
-
-export const DrawOut: React.FC<{
-  caption: Caption;
-  audioPlayer: HTMLAudioElement;
-}> = ({ caption, audioPlayer }) => {
-  const { clock } = useContext(EditContext);
-  const drawOutDone = useCallback(
-    (caption) => {
-      if (!audioPlayer) return;
-      console.log("ENNDING DRAW OUT", format(audioPlayer.currentTime));
-      clock.emit("newEndFor", caption, audioPlayer.currentTime);
-      audioPlayer.currentTime = caption.start;
-      //clock.emit("setLoop", true);
-    },
-    [audioPlayer, clock]
-  );
-
-  const drawOutStart = useCallback(
-    (caption) => {
-      if (!audioPlayer) return;
-      // clock.emit("setLoop", false);
-      console.log("STARTING DRAW OUT");
-      audioPlayer.currentTime = caption.start;
-      audioPlayer.play();
-    },
-    [audioPlayer]
-  );
-  useEffect(() => {
-    clock.on("drawOutStart", drawOutStart);
-    clock.on("drawOutDone", drawOutDone);
-    return (): void => {
-      clock.off("drawOutStart", drawOutStart);
-      clock.off("drawOutDone", drawOutDone);
-    };
-  }, [clock, drawOutStart, drawOutDone]);
-  return <></>;
 };

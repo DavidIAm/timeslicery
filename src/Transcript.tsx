@@ -5,13 +5,11 @@ import React, {
   useEffect,
 } from "react";
 import EventEmitter from "events";
-import ReactAudioPlayer from "react-audio-player";
 import { Lines } from "./Lines";
 import { format } from "./Util";
 import { CaptionFile } from "./CaptionFile";
 
 export const EditContext = createContext<{
-  audio?: ReactAudioPlayer;
   clock: EventEmitter;
   keyboard: EventEmitter;
 }>({
@@ -43,7 +41,7 @@ export const Transcript: React.FC<{ transcript: CaptionFile }> = ({
 
   return (
     <div style={{ width: "100%" }}>
-      <Lines all={transcript.captions} />
+      <Lines captions={transcript.captions} />
     </div>
   );
 };

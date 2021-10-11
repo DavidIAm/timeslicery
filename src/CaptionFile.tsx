@@ -1,31 +1,41 @@
 import EventEmitter from "events";
-import { CaptionSet } from "./CaptionSet";
 import { v4 } from "uuid";
 import { Caption } from "./Caption";
-import { CompletedMutation, makeMutation, Mutation } from "./Mutation";
+import {
+  CompletedMutation,
+  makeMutation,
+  Mutation,
+  MutationActions,
+} from "./Mutation";
+import { CaptionSet } from "./CaptionSet";
+
+const defaultChanges: CompletedMutation[] = [
+  Object.assign(
+    { dependents: [], captionSet: new CaptionSet([]) },
+    makeMutation({ action: MutationActions.CLEAR, note: "app init" })
+  ),
+];
 
 export class CaptionFile extends EventEmitter {
-  public captionSet: CaptionSet;
   public chunks: { [key: number]: Caption[] } = {};
-  public changes: Mutation[] = [];
+  public changes: CompletedMutation[] = [];
 
-  public undoneChanges: Mutation[] = [];
-  private cb: (cf: CaptionFile) => void = () => {};
+  public undoneChanges: CompletedMutation[] = [];
   private index: { [key: string]: number } = {};
   private uuidString: string = "";
 
   constructor(
-    changes: CompletedMutation[],
-    undoneChanges: CompletedMutation[] = [],
-    cb: (cf: CaptionFile) => void = () => void 0
+    changes: CompletedMutation[] = defaultChanges,
+    undoneChanges: CompletedMutation[] = []
   ) {
     super();
     this.uuid = v4();
-    if (cb) this.cb = cb;
-    this.captionSet = new CaptionSet(changes);
-    this.undoneChanges = undoneChanges;
-    this.cb = cb;
-    this.changed();
+    this.changes = [...changes];
+    this.undoneChanges = [...undoneChanges];
+  }
+
+  get captionSet(): CaptionSet {
+    return this.changes[this.changes.length - 1]?.captionSet;
   }
 
   set uuid(uuid: string) {
@@ -65,7 +75,10 @@ export class CaptionFile extends EventEmitter {
     return this.captions.reduce(
       (acc: { voice: string; text: string }[], { voice, text }: Caption) => {
         const final = acc[acc.length - 1];
-        if (!final || final.voice.toUpperCase() !== voice.toUpperCase()) {
+        if (
+          voice &&
+          (!final || final.voice.toUpperCase() !== voice.toUpperCase())
+        ) {
           acc.push({ voice, text });
         } else {
           final.text = [final.text, text].join(" ");
@@ -121,9 +134,11 @@ export class CaptionFile extends EventEmitter {
   }
 
   applyMutation(mutation: Mutation) {
-    return new CaptionFile([
-      CaptionSet.completeMutation(mutation, this.captionSet.getCaptions()),
-    ]);
+    if (this.changes.find((m) => m.uuid === mutation.uuid))
+      return new CaptionFile(this.changes, this.undoneChanges);
+    const complete = CaptionSet.completeMutation(mutation, this.captionSet);
+    this.changes.push(complete);
+    return new CaptionFile(this.changes, this.undoneChanges);
   }
 
   byUuid(uuid: string): Promise<Caption> {
