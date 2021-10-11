@@ -55,7 +55,7 @@ export class CaptionSet {
 
   static metaEndFields(current: Caption, next?: Caption) {
     const endRaw = format(current.end);
-    const nextCaption = next && next.uuid;
+    const nextCaption = next;
     // predict the gap will be 0.001 if next start is negative offset
     const foreSize =
       Math.max(((next && next.start) || current.end) - current.end, 0.001) *
@@ -65,7 +65,7 @@ export class CaptionSet {
 
   static metaStartFields(current: Caption, prev?: Caption) {
     const startRaw = format(current.start);
-    const prevCaption = prev && prev.uuid;
+    const prevCaption = prev;
     const backSize = (current.start - ((prev && prev.end) || 0)) * 1000;
     return { startRaw, prevCaption, backSize };
   }

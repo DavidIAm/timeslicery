@@ -33,57 +33,78 @@ const offset: (e: KeyboardEvent) => number = ({ altKey, shiftKey }) =>
   offsets.find(({ alt, shift }) => alt === altKey && shift === shiftKey)
     ?.offset || 0;
 
-export function up(
-  event: KeyboardEvent,
-  all: Caption[],
-  clock: EventEmitter,
-  position: number,
-  changePosition: (e: { rel?: number; abs?: number }) => void
-) {
-  const seekPoint = Math.max(
-    Math.min(
-      (all[Math.max(position, 0)]?.start || 0) - offset(event),
-      all[Math.max(position, 1) - 1]?.start
-    ),
-    0
-  );
-  const caption =
-    all
-      .slice(0, Math.max(position + 1, 0))
-      .reverse()
-      .find(
-        (c, i, a) =>
-          c.start <= seekPoint && a[Math.max(i - 1, 0)]?.start > seekPoint
-      ) || all.find(() => true);
-  if (!caption) console.warn("no captions available?");
-  if (!caption) return;
-  changePosition({ abs: caption.index });
-  clock.emit("jumpToCaption", caption);
+type ChangePositionType = (e: { rel?: number; abs?: number }) => void;
+type JumpTupleType = [
+  Caption[],
+  EventEmitter,
+  number,
+  ChangePositionType,
+  "prevCaption" | "nextCaption"
+];
+
+export function up(event: KeyboardEvent, ...args: JumpTupleType): void {
+  return jump(-1 * offset(event), ...args);
 }
 
-export function down(
-  event: KeyboardEvent,
+export function down(event: KeyboardEvent, ...args: JumpTupleType): void {
+  return jump(offset(event), ...args);
+}
+
+export function jump(
+  offset: number,
   all: Caption[],
   clock: EventEmitter,
   position: number,
-  changePosition: (e: { rel?: number; abs?: number }) => void
+  changePosition: (e: { rel?: number; abs?: number }) => void,
+  captionDirection: "prevCaption" | "nextCaption"
 ) {
-  const seekPoint = Math.min(
-    Math.max(
-      (all[Math.max(position, 0)]?.start || 0) + offset(event),
-      all[Math.min(Math.max(position, 0) + 1, all.length)]?.start
-    ),
-    all[all.length - 1].end
-  );
-  const caption =
-    all.slice(Math.max(position, 0)).find((c, i, a) => {
-      return a[i]?.start <= seekPoint && a[i + 1]?.start > seekPoint;
-    }) || all[all.length - 1];
-  if (!caption) console.warn("no captions available?");
-  if (!caption) return;
-  changePosition({ abs: caption.index });
-  clock.emit("jumpToCaption", caption);
+  const current = all[Math.max(Math.floor(position), 0)] || 0;
+  if (Math.abs(offset) === 1) {
+    if (current[captionDirection])
+      return changePosition({ abs: current[captionDirection]?.index });
+    return;
+  }
+  const newTime = Math.max(current.start + offset);
+  const newIndex =
+    positionOf(all, newTime) || (offset > 0 ? all.length - 1 : 0);
+  console.log({ position, currentTime: current.start, newTime, newIndex });
+  changePosition({ abs: newIndex });
 }
+
+//A -0.5          ^ |<*>
+//B    0        ^ <-|-> <*>
+//C  0.5    ... <-->| <*>
+//D    n      ... <-|-> $
+//E  n.5    ... <-->| $
+const positionOf = (captions: Caption[], thisTimepoint: number) => {
+  const oneAfter = captions.find(({ start }) => thisTimepoint < start);
+  // A B C
+  if (oneAfter) {
+    // B C
+    if (oneAfter.prevCaption) {
+      // B
+      if (thisTimepoint < oneAfter.prevCaption.end) {
+        return oneAfter.prevCaption.index;
+      } else {
+        // C
+        return (oneAfter.prevCaption.index || 0) + 0.5;
+      }
+    } else {
+      // A
+      return -0.5;
+    }
+  } else {
+    // D E
+    const caption = captions[captions.length - 1];
+    // E
+    if (thisTimepoint > caption.end) {
+      return (caption.index || 0) + 0.5;
+    } else {
+      // D
+      return caption.index;
+    }
+  }
+};
 
 export const Lines: React.FC<LinesProps> = ({ captions }) => {
   const { keyboard, clock } = useContext(EditContext);
@@ -149,9 +170,9 @@ export const Lines: React.FC<LinesProps> = ({ captions }) => {
 
   useEffect(() => {
     const moveDown = (event: KeyboardEvent) =>
-      down(event, captions, clock, position, changePosition);
+      down(event, captions, clock, position, changePosition, "nextCaption");
     const moveUp = (event: KeyboardEvent) =>
-      up(event, captions, clock, position, changePosition);
+      up(event, captions, clock, position, changePosition, "prevCaption");
     clock.on("moveDown", moveDown).on("moveUp", moveUp);
     keyboard
       .on("linesKeyJ", moveDown)
@@ -167,9 +188,9 @@ export const Lines: React.FC<LinesProps> = ({ captions }) => {
   }, [keyboard, clock, position, captions, play]);
 
   useEffect(() => {
-    if (position < 0 || !captions[position]) return;
+    if (position < 0 || !captions[Math.floor(position)]) return;
     clock.emit("jumpToCaption", captions[position]);
-    const top = Math.max(position - 2, 0);
+    const top = Math.max(Math.floor(position) - 2, 0);
     setWindow({
       top,
       bottom: Math.min(top + 5, captions.length),
@@ -179,20 +200,21 @@ export const Lines: React.FC<LinesProps> = ({ captions }) => {
   useEffect(() => {
     if (!clock) return;
     if (!captions) return;
-    if (!bottom) return;
+    if (!captions.length) return;
     const timeListener = (currentTime: number): void => {
-      const inThisCaption: (c: Caption) => boolean = ({ end, start }) =>
-        currentTime < end && currentTime >= start;
-
-      const positionOf = () => {
-        if (currentTime <= (captions[0]?.end || 0)) return 0;
-        const sliced = captions.slice(top, bottom).find(inThisCaption)?.index;
-        if (typeof sliced === "number") return sliced;
-        const scanned = captions.find(inThisCaption)?.index;
-        if (typeof scanned === "number") return scanned;
-        return position;
-      };
-      changePosition({ abs: positionOf() });
+      const current = captions[Math.max(Math.floor(position), 0)];
+      if (currentTime >= current.start && currentTime < current.end) {
+        if (current.index === position) return;
+        changePosition({ abs: current.index });
+      }
+      const next = current.nextCaption;
+      if (next && currentTime >= next.start && currentTime < next.end)
+        return changePosition({ abs: next.index });
+      if (next && currentTime < next.start && currentTime > current.end)
+        return changePosition({ abs: (current.index || 0) + 0.5 });
+      changePosition({
+        abs: positionOf(captions, currentTime),
+      });
     };
     if (cueState === CUE_STATE.CUE_OFF) {
       clock.on("time", timeListener);
@@ -200,12 +222,12 @@ export const Lines: React.FC<LinesProps> = ({ captions }) => {
         clock.off("time", timeListener);
       };
     }
-  }, [clock, captions, position, bottom, top, cueState]);
+  }, [clock, captions, position, cueState]);
 
   return (
     <>
       <EditBox
-        caption={captions[Math.max(position, 0)]}
+        caption={captions[Math.min(Math.max(position, 0), captions.length - 1)]}
         prev={position ? captions[position - 1] : void 0}
         next={position + 2 < captions.length ? captions[position + 1] : void 0}
       />

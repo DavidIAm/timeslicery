@@ -29,7 +29,7 @@ export const MutationHandlers: React.FC<{
 
   useClock(
     "newStartFor",
-    ({ caption, time, note }) =>
+    (time, note, caption) =>
       rmfp(caption, "new start : " + note, () => ({
         start: time,
       })),
@@ -38,7 +38,7 @@ export const MutationHandlers: React.FC<{
 
   useClock(
     "newEndFor",
-    ({ caption, time, note }) => {
+    (time, note, caption) => {
       console.log("new end for", caption, time, note);
       return rmfp(caption, "new end : " + note, () => ({
         end: time,

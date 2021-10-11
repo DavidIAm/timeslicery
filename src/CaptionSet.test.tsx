@@ -231,7 +231,7 @@ describe("CaptionSet", () => {
       expect(caps[2]?.endRaw).toEqual("00:00:03.000");
     });
 
-    test("prevCaption has the uuid of the previous caption", () => {
+    test("prevCaption is the previous caption", () => {
       const underTest = CaptionSet.completeMutation(
         makeMutation({
           action: MutationActions.BULK_ADD,
@@ -243,7 +243,7 @@ describe("CaptionSet", () => {
       underTest
         .getCaptions()
         .forEach((e, i, arr) =>
-          expect(e.prevCaption).toEqual(i ? arr[i - 1].uuid : void 0)
+          expect(e.prevCaption).toEqual(i ? arr[i - 1] : void 0)
         );
     });
 
@@ -262,7 +262,7 @@ describe("CaptionSet", () => {
       expect(caps[2]?.backSize).toBeCloseTo(1, 3);
     });
 
-    test("nextCaption has the uuid of the next caption", () => {
+    test("nextCaption is the next caption", () => {
       const underTest = CaptionSet.completeMutation(
         makeMutation({
           action: MutationActions.BULK_ADD,
@@ -275,7 +275,7 @@ describe("CaptionSet", () => {
         .getCaptions()
         .forEach((e, i, arr) =>
           expect(e.nextCaption).toEqual(
-            i < arr.length - 1 ? arr[i + 1].uuid : void 0
+            i < arr.length - 1 ? arr[i + 1] : void 0
           )
         );
     });

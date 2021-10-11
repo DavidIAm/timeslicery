@@ -126,6 +126,10 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
 
   const jumpToHandler = useCallback(
     (c: Caption) => {
+      if (!c) {
+        console.warn("jump to undefined");
+        return;
+      }
       clock.emit("time", c.start);
       if (!audioPlayer) return;
       if (typeof c.start === "undefined") {

@@ -10,8 +10,8 @@ export interface Caption {
   index?: number;
   backSize?: number;
   foreSize?: number;
-  nextCaption?: string;
-  prevCaption?: string;
+  nextCaption?: Caption;
+  prevCaption?: Caption;
 }
 
 const ignoreFields = [

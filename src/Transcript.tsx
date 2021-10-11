@@ -6,7 +6,7 @@ import React, {
 } from "react";
 import EventEmitter from "events";
 import { Lines } from "./Lines";
-import { format } from "./Util";
+import { format, useClock } from "./Util";
 import { CaptionFile } from "./CaptionFile";
 
 export const EditContext = createContext<{
@@ -22,6 +22,21 @@ export const Transcript: React.FC<{ transcript: CaptionFile }> = ({
 }) => {
   const { clock } = useContext(EditContext);
 
+  useClock(
+    "withCurrentUndoIndex",
+    (event, ...args) => clock.emit(event, transcript.changes.length, ...args),
+    []
+  );
+  useClock(
+    "setCurrentUndoIndex",
+    (index: number) => {
+      while (transcript.changes.length > index) {
+        const e = transcript.changes.pop();
+        if (e) transcript.undoneChanges.unshift(e);
+      }
+    },
+    []
+  );
   const cutInHalf = useCallback(
     (index) => {
       console.log("CPATION", index);
