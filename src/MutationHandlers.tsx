@@ -47,5 +47,27 @@ export const MutationHandlers: React.FC<{
     [rmfp]
   );
 
+  useClock(
+    "newTextFor",
+    (text, note, caption) => {
+      console.log("new text for", text, caption, note);
+      return rmfp(caption, "new text : " + note, () => ({
+        text,
+      }));
+    },
+    [rmfp]
+  );
+
+  useClock(
+    "newVoiceFor",
+    (voice, note, caption) => {
+      console.log("new voice for", voice, caption, note);
+      return rmfp(caption, "new voice : " + note, () => ({
+        voice,
+      }));
+    },
+    [rmfp]
+  );
+
   return <>{children}</>;
 };

@@ -43,8 +43,8 @@ export const EditBox: React.FC<{
   const { voice, text, foreSize, backSize } = caption || {
     start: 0,
     end: 0,
-    voice: "Empty",
-    text: "Empty",
+    voice: "EMPTY_VOICE_VALUE",
+    text: "EMPTY_TEXT_VALUE",
     foreSize: 0,
     backSize: 0,
     index: -1,
@@ -59,6 +59,7 @@ export const EditBox: React.FC<{
   const [hovering, setHovering] = useState<boolean>(false);
   const [cueState, setCueState] = useState<CUE_STATE>(CUE_STATE.CUE_OFF);
   const [editBlock, setEditBlock] = useState<HTMLDivElement | null>(null);
+  const [newText, setNewText] = useState<string>("");
 
   useEffect(() => emitter(clock, "cueState", cueState)(), [clock, cueState]);
   useClock("voiceSet", setVoiceSet, []);
@@ -182,11 +183,24 @@ export const EditBox: React.FC<{
       const { code } = event;
       keyboard.emit("Keyboard", { zone: "edit", event });
       keyboard.emit(`edit${code}`, event);
-      console.log("edit", event);
-      event.stopPropagation();
+      console.log("edit", "EDITKEYBOARD", code);
     };
-    editBlock.addEventListener("keyup", emit);
+    editBlock.addEventListener("keydown", emit);
   }, [editBlock, keyboard]);
+  useEffect(() => setNewText(text), [text]);
+  // when newText is changed, then if you hit enter, it commits it
+  useEffect(() => {
+    if (!clock) return;
+    if (newText === "EMPTY_TEXT_VALUE") return;
+    if (newText === text) return;
+    const keyHandler = (e: KeyboardEvent) => {
+      e.preventDefault();
+      clock.emit("newTextFor", newText, "human edit", caption);
+      if (e.shiftKey) clock.emit("moveTo", caption.nextCaption);
+    };
+    keyboard.on("editEnter", keyHandler);
+    return (): void => void keyboard.off("editEnter", keyHandler);
+  }, [newText, clock, keyboard]);
 
   return (
     <>
@@ -201,7 +215,14 @@ export const EditBox: React.FC<{
       >
         <div>
           <label htmlFor="voice">Voice</label>
-          <select name="voice" ref={(t) => setSpeaking(t)} defaultValue={voice}>
+          <select
+            name="voice"
+            ref={(t) => setSpeaking(t)}
+            onChange={({ target: { value } }) =>
+              clock.emit("newVoiceFor", value, "human edit", caption)
+            }
+            defaultValue={voice}
+          >
             {VoiceSetList}
           </select>
         </div>
@@ -335,6 +356,7 @@ export const EditBox: React.FC<{
               style={{ fontSize: "1em" }}
               ref={setTextArea}
               cols={40}
+              onChange={({ target: { value } }) => setNewText(value)}
               onKeyPressCapture={console.log}
               onKeyDown={console.log}
               defaultValue={""}
