@@ -141,6 +141,12 @@ export const Lines: React.FC<LinesProps> = ({ captions }) => {
     [clock]
   );
 
+  useClock(
+    "moveTo",
+    (caption: Caption) => changePosition({ abs: caption!.index }),
+    []
+  );
+
   useEffect(() => {
     const moveDown = (event: KeyboardEvent) =>
       down(event, captions, clock, position, changePosition);
@@ -198,7 +204,11 @@ export const Lines: React.FC<LinesProps> = ({ captions }) => {
 
   return (
     <>
-      <EditBox caption={captions[Math.max(position, 0)]} />
+      <EditBox
+        caption={captions[Math.max(position, 0)]}
+        prev={position ? captions[position - 1] : void 0}
+        next={position + 2 < captions.length ? captions[position + 1] : void 0}
+      />
       <div
         tabIndex={1}
         onMouseEnter={({ currentTarget }) => currentTarget.focus()}

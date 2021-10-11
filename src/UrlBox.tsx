@@ -39,28 +39,21 @@ export const UrlBox: React.FC = () => {
 
   const replaceMutationFromPartial = useCallback(
     (
-      uuid: string,
+      caption: Caption,
       note: string,
       whatToDo: (c: Caption) => Partial<Caption>
     ): void => {
-      captionFile
-        .byUuid(uuid)
-        .then((c) =>
-          dispatch(
-            makeMutation({
-              action: MutationActions.REPLACE,
-              after: Object.assign({}, c, whatToDo(c), { uuid: v4() }),
-              before: c,
-              note,
-              when: new Date(),
-            })
-          )
-        )
-        .catch((e) => {
-          throw e;
-        });
+      console.log(whatToDo(caption));
+      dispatch(
+        makeMutation({
+          action: MutationActions.REPLACE,
+          after: Object.assign({}, caption, whatToDo(caption), { uuid: v4() }),
+          before: caption,
+          note,
+        })
+      );
     },
-    [captionFile, dispatch]
+    [dispatch]
   );
 
   useEffect(() => {

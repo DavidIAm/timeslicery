@@ -1,4 +1,5 @@
 import React, {
+  EventHandler,
   Reducer,
   useCallback,
   useContext,
@@ -10,21 +11,36 @@ import React, {
 import { Caption, CUE_STATE, PLC } from "./Caption";
 import { EditContext } from "./Transcript";
 import { v4 } from "uuid";
-import { format, useClock, useKeyboard } from "./Util";
+import { useClock, useKeyboard } from "./Util";
 import "./Button.css";
+import EventEmitter from "events";
+import { useCutProcessor } from "./UseCutProcessor";
+import { useCueProcessor } from "./UseCueProcessor";
+import { LiveClock } from "./LiveClock";
 
-export const LiveClock: React.FC = () => {
-  const { clock } = useContext(EditContext);
-  const [time, setTime] = useState<number>(0);
-  useEffect(() => {
-    clock.on("time", setTime);
-    return (): void => void clock.off("time", setTime);
-  }, [clock]);
-  return <>{format(time)}</>;
-};
+// @ts-ignore
+type EmitterType = (c: EventEmitter, eventName: string, ...args) => () => void;
+type EmitterEventType = (
+  c: EventEmitter,
+  eventName: string,
+  // @ts-ignore
+  ...args
+) => EventHandler<any>;
+export const emitterEvent: EmitterEventType =
+  (c, eventName, ...args) =>
+  (uiEvent) =>
+    c.emit(eventName, uiEvent, ...args);
+export const emitter: EmitterType =
+  (c, eventName, ...args) =>
+  () =>
+    c.emit(eventName, ...args);
 
-export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
-  const { voice, text, foreSize, backSize, uuid } = caption || {
+export const EditBox: React.FC<{
+  caption: Caption;
+  prev?: Caption;
+  next?: Caption;
+}> = ({ caption, prev, next }) => {
+  const { voice, text, foreSize, backSize } = caption || {
     start: 0,
     end: 0,
     voice: "Empty",
@@ -44,38 +60,8 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
   const [cueState, setCueState] = useState<CUE_STATE>(CUE_STATE.CUE_OFF);
   const [editBlock, setEditBlock] = useState<HTMLDivElement | null>(null);
 
-  const emitter = useCallback(
-    (event: string, ...args) =>
-      () =>
-        clock.emit(event, ...args),
-    [clock]
-  );
-  useEffect(
-    () => void emitter("cueState", cueState)(),
-    [clock, emitter, cueState]
-  );
+  useEffect(() => emitter(clock, "cueState", cueState)(), [clock, cueState]);
   useClock("voiceSet", setVoiceSet, []);
-  useClock(
-    "cueStart",
-    () => {
-      setPlayLoopCue(PLC.CUE);
-      setCueState(CUE_STATE.CUE_START);
-      clock.emit("jumpToCaption", caption);
-      clock.emit("saveNewUndoPoint");
-      clock.emit("togglePlay", true);
-      setCueState(CUE_STATE.CUE_IN);
-    },
-    []
-  );
-  useClock(
-    "cueCancel",
-    () => {
-      clock.emit("togglePlay", false);
-      setCueState(CUE_STATE.CUE_OFF);
-      setPlayLoopCue(PLC.PAUSE);
-    },
-    []
-  );
 
   const keyboardHandler = useCallback(({ key }) => console.log("Key", key), []);
   useEffect(() => {
@@ -127,114 +113,15 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
     };
   }, [cueState, keyboard, clock]);
 
-  const updateInLength = useCallback(
-    (time) => {
-      if (!caption?.start) return;
-      setStateMessage(`Caption Length: ${format(time - caption.start)}`);
-    },
-    [caption?.start]
-  );
-  const [lastOutTime, setLastOutTime] = useState<number>(0);
-  const updateOutLength = useCallback(
-    (time) => {
-      if (!caption?.end) return;
-      setStateMessage(`Gap Length: ${format(time - lastOutTime)}`);
-    },
-    [caption?.end, lastOutTime]
-  );
-  const [playCurrentTime, setTime] = useState<number>(0);
-  useEffect(() => {
-    if (!clock) return;
-    const cleanup: (() => void)[] = [];
-    switch (cueState) {
-      case CUE_STATE.CUE_OFF:
-        break;
-      case CUE_STATE.CUE_START:
-        clock.emit("jumpToCaption", caption);
-        clock.emit("saveNewUndoPoint");
-        clock.emit("togglePlay", true);
-        setCueState(CUE_STATE.CUE_GAP);
-        break;
-
-      // while in cue_gap when cueIn, send newStartFor next
-      case CUE_STATE.CUE_GAP:
-        clock.on("time", setTime);
-        const onAction = () => {
-          if (caption.nextCaption) {
-            clock.emit("newStartFor", {
-              note: "human cue out",
-              uuid: caption.nextCaption,
-              time: playCurrentTime,
-            });
-          }
-        };
-        clock.on("cueIn", onAction);
-        clock.on("time", updateInLength);
-        cleanup.push((): void => {
-          clock.off("time", setTime);
-          clock.off("time", updateOutLength);
-          clock.off("cueIn", onAction);
-        });
-        //        clock.emit("cueOut", caption.uuid);
-        break;
-
-      // while cue in - on CueIn set start of next, set end for last
-      // on cueOut, set end of current
-      case CUE_STATE.CUE_IN:
-        const onInInAction = () => {
-          clock.emit("newStartFor", {
-            note: "human cue in",
-            uuid: caption.nextCaption,
-            time: playCurrentTime + 0.001,
-          });
-          clock.emit("newEndFor", {
-            note: "human cue in",
-            uuid: caption.uuid,
-            time: playCurrentTime,
-          });
-        };
-        const onInOutAction = () => {
-          setLastOutTime(playCurrentTime);
-          clock.emit("newEndFor", {
-            note: "human cue in",
-            uuid: caption.uuid,
-            time: playCurrentTime,
-          });
-          setCueState(CUE_STATE.CUE_GAP);
-        };
-        clock.on("time", setTime);
-        clock.on("cueIn", onInInAction);
-        clock.on("cueOut", onInOutAction);
-        clock.on("time", updateInLength);
-        cleanup.push((): void => {
-          clock.off("time", setTime);
-          clock.off("time", updateInLength);
-          clock.off("cueIn", onInInAction);
-          clock.off("cueOut", onInOutAction);
-        });
-        break;
-
-      case CUE_STATE.CUE_CANCEL:
-        break;
-      case CUE_STATE.CUE_SAVE:
-        clock.emit("playLoopCue", "pause");
-        clock.emit("restoreToUndoPoint");
-        clock.emit("togglePlay", false);
-        setPlayLoopCue(PLC.PAUSE);
-        setCueState(CUE_STATE.CUE_OFF);
-    }
-    if (cleanup.length) {
-      return (): void => cleanup.forEach((cb) => cb());
-    }
-  }, [
+  useCueProcessor(
     cueState,
-    clock,
+    setCueState,
+    setPlayLoopCue,
+    setStateMessage,
     caption,
-    updateInLength,
-    updateOutLength,
-    lastOutTime,
-    playCurrentTime,
-  ]);
+    next,
+    prev
+  );
 
   useEffect(() => {
     const checkPlay = (playing: boolean): void => {
@@ -262,8 +149,10 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
         : a,
     { looping: false }
   );
+
+  useCutProcessor(playLoopCue, caption, next, prev);
+
   useEffect(() => {
-    clock.emit("PlayLoopCue", playLoopCue);
     setStateMessage(void 0);
     switch (playLoopCue) {
       case PLC.PAUSE:
@@ -284,7 +173,7 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
         break;
     }
   }, [playLoopCue, caption, hovering, clock]);
-  useEffect(() => void emitter("setLoop", loopState)(), [loopState, emitter]);
+  useEffect(() => emitter(clock, "setLoop", loopState)(), [loopState, clock]);
 
   useEffect(() => {
     if (!editBlock) return;
@@ -324,16 +213,20 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
           }}
         >
           <div className={"leftwards"}>
-            <button onClick={emitter("moveUp")}>Prev</button>
+            <button disabled={!prev} onClick={emitter(clock, "moveTo", prev)}>
+              Prev
+            </button>
           </div>
           <div>
             <LiveClock />
           </div>
           <div className={"rightwards"}>
-            <button onClick={emitter("moveDown")}>Next</button>
+            <button disabled={!next} onClick={emitter(clock, "moveTo", next)}>
+              Next
+            </button>
           </div>
           <div className={"leftwards"}>
-            <button onClick={emitter("insertBack", caption?.uuid)}>
+            <button onClick={emitter(clock, "insertBack", caption?.uuid)}>
               &lt; Insert &lt;
             </button>
           </div>
@@ -348,7 +241,7 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
                     <div>
                       <button
                         disabled={cueState === CUE_STATE.CUE_GAP}
-                        onClick={emitter("cueOut")}
+                        onClick={emitter(clock, "cueOut")}
                       >
                         Out
                       </button>
@@ -357,19 +250,21 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
                   </div>
                   <div>
                     <div>
-                      <button onClick={emitter("cueIn")}>In</button>
+                      <button onClick={emitter(clock, "cueIn")}>In</button>
                     </div>
                     <div className={"hint"}>Space</div>
                   </div>
                   <div>
                     <div>
-                      <button onClick={emitter("cueSave")}>Save</button>
+                      <button onClick={emitter(clock, "cueSave")}>Save</button>
                     </div>
                     <div className={"hint"}>Backspace</div>
                   </div>
                   <div>
                     <div>
-                      <button onClick={emitter("cueCancel")}>Cancel</button>
+                      <button onClick={emitter(clock, "cueCancel")}>
+                        Cancel
+                      </button>
                     </div>
                     <div className={"hint"}>Escape</div>
                   </div>
@@ -377,9 +272,12 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
               </>
             ) : (
               <>
-                <button onClick={emitter("cueStart")}>Cue</button>
+                <button onClick={emitter(clock, "cueStart")}>Cue</button>
                 <button
-                  onClick={emitter(playLoopCue === PLC.PLAY ? "pause" : "play")}
+                  onClick={emitter(
+                    clock,
+                    playLoopCue === PLC.PLAY ? "pause" : "play"
+                  )}
                 >
                   {playLoopCue === PLC.PLAY ? "Pause" : "Play"}
                 </button>
@@ -387,14 +285,14 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
             )}
           </div>
           <div className={"rightwards"}>
-            <button onClick={emitter("insertAfter", caption?.uuid)}>
+            <button onClick={emitter(clock, "insertAfter", caption?.uuid)}>
               &gt; Insert &gt;
             </button>
           </div>
           <div className={"leftwards"}>
             <button
               disabled={(backSize || 0) < 0.1}
-              onClick={emitter("gapBefore", uuid)}
+              onClick={emitter(clock, "gapBefore", caption)}
             >
               &lt; Gap &lt;
             </button>
@@ -405,23 +303,29 @@ export const EditBox: React.FC<{ caption: Caption }> = ({ caption }) => {
           <div className={"rightwards"}>
             <button
               disabled={(foreSize || 0) < 1.001}
-              onClick={emitter("gapAfter", uuid)}
+              onClick={emitter(clock, "gapAfter", caption)}
             >
               &gt; Gap &gt;
             </button>
           </div>
           <div className={"leftwards"}>
-            <button onClick={emitter("cutToPrev", 1.5)}>
+            <button
+              disabled={[PLC.PAUSE].includes(playLoopCue) || !prev}
+              onClick={emitter(clock, "withTime", "cutToPrev")}
+            >
               &lt; Cut to Prev&lt;
             </button>
           </div>
           <div>
-            <button onClick={emitter("playbackRate", 1.5)}>Fast</button>/
-            <button onClick={emitter("playbackRate", 1)}> Normal</button>/
-            <button onClick={emitter("playbackRate", 0.5)}>Slow</button>
+            <button onClick={emitter(clock, "playbackRate", 1.5)}>Fast</button>/
+            <button onClick={emitter(clock, "playbackRate", 1)}> Normal</button>
+            /<button onClick={emitter(clock, "playbackRate", 0.5)}>Slow</button>
           </div>
           <div className={"rightwards"}>
-            <button onClick={emitter("cutToNext", caption?.uuid)}>
+            <button
+              disabled={[PLC.PAUSE].includes(playLoopCue) || !next}
+              onClick={emitter(clock, "withTime", "cutToNext")}
+            >
               &gt; Cut to Next &gt;
             </button>
           </div>

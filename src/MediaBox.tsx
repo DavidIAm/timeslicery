@@ -25,6 +25,7 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
   const [playbackRate, setPlaybackRate] = useState<number>(1);
   const [blurPause, setBlurPause] = useState(false);
   const [loop, setLoop] = useState<LoopState>({ looping: false });
+  const [bipPlayer, setBipPlayer] = useState<HTMLAudioElement>();
 
   const [play, togglePlay] = useReducer<
     (p: boolean, f: boolean) => boolean,
@@ -45,6 +46,10 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
     if (!audioPlayer) return;
     if (!clock) return;
     clock.emit("newAudioPlayer", audioPlayer);
+    const withTime = (name: string, ...args: any) =>
+      clock.emit(name, audioPlayer.currentTime, ...args);
+    clock.on("withTime", withTime);
+    return (): void => void clock.off("withTime", withTime);
   }, [audioPlayer, clock]);
 
   useClock("blurPause", setBlurPause, []);
@@ -79,7 +84,7 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
   useEffect(() => {
     if (!audioPlayer) return;
     if (!loop.looping) return;
-    if (!loop.start) return;
+    if (typeof loop.start === "undefined") return;
     if (!loop.end) return;
     if (!play) return;
     let interval: number;
@@ -87,9 +92,11 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
       timeout = 0 || 0;
       audioPlayer.currentTime = loop.start || 0;
       console.log("loop initial backToStart");
+      bipPlayer!.play();
       interval = window.setInterval(() => {
         console.log("loop backToStart");
         audioPlayer.currentTime = loop.start || 0;
+        bipPlayer!.play();
       }, (((loop.end || 0) - (loop.start || 0)) * 1000) / playbackRate);
     }, ((loop.end - audioPlayer.currentTime) * 1000) / playbackRate);
     return (): void => {
@@ -97,7 +104,7 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
       if (timeout) clearTimeout(timeout);
       if (interval) clearInterval(interval);
     };
-  }, [audioPlayer, play, playbackRate, loop]);
+  }, [audioPlayer, play, playbackRate, loop, bipPlayer]);
 
   useEffect(() => {
     if (!audioPlayer) return;
@@ -145,6 +152,14 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
 
   return (
     <>
+      <ReactAudioPlayer
+        ref={(e) => {
+          if (e && e?.audioEl && e.audioEl.current)
+            setBipPlayer(e?.audioEl.current);
+        }}
+        volume={0.5}
+        src={"/MouseClick.wav"}
+      />
       <ReactAudioPlayer
         ref={(e) => {
           if (e && e?.audioEl && e.audioEl.current)
