@@ -36,7 +36,6 @@ export const useCutProcessor = (
       case PLC.PLAY:
       case PLC.ENTRY:
       case PLC.CUE:
-        console.log("Cut Enabled");
         clock.on("cutToPrev", cutPrev);
         clock.on("cutToNext", cutNext);
         return (): void => {

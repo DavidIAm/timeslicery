@@ -44,7 +44,7 @@ export const EditBox: React.FC<{
     start: 0,
     end: 0,
     voice: "EMPTY_VOICE_VALUE",
-    text: "EMPTY_TEXT_VALUE",
+    text: "",
     foreSize: 0,
     backSize: 0,
     index: -1,
@@ -89,7 +89,7 @@ export const EditBox: React.FC<{
       </>
     ),
     [voiceSet]
-  ) || <></>;
+  );
 
   useKeyboard("linesPeriod", keyboardHandler, []);
   useKeyboard("linesComma", keyboardHandler, []);
@@ -114,15 +114,29 @@ export const EditBox: React.FC<{
     };
   }, [cueState, keyboard, clock]);
 
-  useCueProcessor(
-    cueState,
-    setCueState,
-    setPlayLoopCue,
-    setStateMessage,
-    caption,
-    next,
-    prev
-  );
+  const [cues, subs] = useCueProcessor(cueState, caption, next, prev);
+  useEffect(() => {
+    if (!clock) return;
+    if (!cues) return;
+    const forward = (n: string, ...args: any) => clock.emit(n, ...args);
+    const flist = subs.map((en): [string, (...a: any) => void] => [
+      en,
+      (...args: any) => cues.emit(en, ...args),
+    ]);
+    flist.forEach(([en, func]) => clock.on(en, func));
+    cues.on("forEventBus", forward);
+    cues.on("setCueState", setCueState);
+    cues.on("setPlayLoopCue", setPlayLoopCue);
+    cues.on("setStateMessage", setStateMessage);
+    return (): void => {
+      subs.forEach((en) => clock.on(en, (...args) => cues.emit(en, ...args)));
+      flist.forEach(([en, func]) => clock.off(en, func));
+      cues.off("forEventBus", forward);
+      cues.off("setCueState", setCueState);
+      cues.off("setPlayLoopCue", setPlayLoopCue);
+      cues.off("setStateMessage", setStateMessage);
+    };
+  }, [cues, clock, setCueState, setPlayLoopCue, setStateMessage, subs]);
 
   useEffect(() => {
     const checkPlay = (playing: boolean): void => {
@@ -154,6 +168,7 @@ export const EditBox: React.FC<{
   useCutProcessor(playLoopCue, caption, next, prev);
 
   useEffect(() => {
+    if (!caption) return;
     setStateMessage(void 0);
     switch (playLoopCue) {
       case PLC.PAUSE:
@@ -190,8 +205,9 @@ export const EditBox: React.FC<{
   useEffect(() => setNewText(text), [text]);
   // when newText is changed, then if you hit enter, it commits it
   useEffect(() => {
+    if (!caption) return;
     if (!clock) return;
-    if (newText === "EMPTY_TEXT_VALUE") return;
+    if (newText === "") return;
     if (newText === text) return;
     const keyHandler = (e: KeyboardEvent) => {
       e.preventDefault();
@@ -200,7 +216,7 @@ export const EditBox: React.FC<{
     };
     keyboard.on("editEnter", keyHandler);
     return (): void => void keyboard.off("editEnter", keyHandler);
-  }, [newText, clock, keyboard]);
+  }, [newText, clock, keyboard, caption, text]);
 
   return (
     <>

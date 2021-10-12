@@ -1,25 +1,16 @@
 import { Caption, CUE_STATE, PLC } from "./Caption";
-import {
-  Dispatch,
-  SetStateAction,
-  useCallback,
-  useContext,
-  useEffect,
-  useState,
-} from "react";
+import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { EditContext } from "./Transcript";
 import { format, useClock } from "./Util";
-import { emitter } from "./EditBox";
+import EventEmitter from "events";
 
 export const useCueProcessor = (
   cueState: CUE_STATE,
-  setCueState: Dispatch<SetStateAction<CUE_STATE>>,
-  setPlayLoopCue: Dispatch<SetStateAction<PLC>>,
-  setStateMessage: Dispatch<SetStateAction<string | undefined>>,
   caption: Caption,
   next?: Caption,
   prev?: Caption
-) => {
+): [EventEmitter, string[]] => {
+  const cueEvents = useMemo(() => new EventEmitter(), []);
   const { clock } = useContext(EditContext);
   const [undoIndex, setUndoIndex] = useState<number>();
 
@@ -28,14 +19,14 @@ export const useCueProcessor = (
   useClock(
     "cueStart",
     () => {
-      setPlayLoopCue(PLC.CUE);
-      setCueState(CUE_STATE.CUE_START);
-      clock.emit("jumpToCaption", caption);
-      clock.emit("withCurrentUndoIndex", "saveUndoIndex");
-      clock.emit("togglePlay", true);
-      setCueState(CUE_STATE.CUE_IN);
+      cueEvents.emit("setPlayLoopCue", PLC.CUE);
+      cueEvents.emit("setCueState", CUE_STATE.CUE_START);
+      cueEvents.emit("forEventBus", "jumpToCaption", caption);
+      cueEvents.emit("forEventBus", "withCurrentUndoIndex", "saveUndoIndex");
+      cueEvents.emit("forEventBus", "togglePlay", true);
+      cueEvents.emit("setCueState", CUE_STATE.CUE_IN);
     },
-    [setPlayLoopCue, setCueState, clock]
+    [cueEvents, clock]
   );
 
   useClock(
@@ -49,28 +40,35 @@ export const useCueProcessor = (
   useClock(
     "cueCancel",
     () => {
-      emitter(clock, "togglePlay", false);
-      if (undoIndex) emitter(clock, "setCurrentUndoIndex", undoIndex);
-      setCueState(CUE_STATE.CUE_OFF);
-      setPlayLoopCue(PLC.PAUSE);
+      cueEvents.emit("forEventBus", "togglePlay", false);
+      if (undoIndex)
+        cueEvents.emit("forEventBus", "setCurrentUndoIndex", undoIndex);
+      cueEvents.emit("setCueState", CUE_STATE.CUE_OFF);
+      cueEvents.emit("setPlayLoopCue", PLC.PAUSE);
     },
-    [setPlayLoopCue, setCueState, clock]
+    [cueEvents, clock]
   );
 
   const updateInLength = useCallback(
     (time) => {
       if (!caption?.start) return;
-      setStateMessage(`Caption Length: ${format(time - caption.start)}`);
+      cueEvents.emit(
+        "setStateMessage",
+        `Caption Length: ${format(time - caption.start)}`
+      );
     },
-    [caption?.start, setStateMessage]
+    [caption?.start, cueEvents]
   );
   const [lastOutTime, setLastOutTime] = useState<number>(0);
   const updateOutLength = useCallback(
     (time) => {
       if (!caption?.end) return;
-      setStateMessage(`Gap Length: ${format(time - lastOutTime)}`);
+      cueEvents.emit(
+        "setStateMessage",
+        `Gap Length: ${format(time - lastOutTime)}`
+      );
     },
-    [caption?.end, lastOutTime, setStateMessage]
+    [caption?.end, lastOutTime, cueEvents]
   );
   useEffect(() => {
     if (!clock) return;
@@ -79,17 +77,23 @@ export const useCueProcessor = (
       case CUE_STATE.CUE_OFF:
         break;
       case CUE_STATE.CUE_START:
-        emitter(clock, "jumpToCaption", caption);
-        emitter(clock, "saveNewUndoPoint");
-        emitter(clock, "togglePlay", true);
-        setCueState(CUE_STATE.CUE_GAP);
+        cueEvents.emit("forEventBus", "jumpToCaption", caption);
+        cueEvents.emit("forEventBus", "saveNewUndoPoint");
+        cueEvents.emit("forEventBus", "togglePlay", true);
+        cueEvents.emit("setCueState", CUE_STATE.CUE_GAP);
         break;
 
       // while in cue_gap when cueIn, send newStartFor next
       case CUE_STATE.CUE_GAP:
         const onAction = () => {
           if (caption.nextCaption)
-            clock.emit("withTime", "newStartFor", "human cue out", next);
+            cueEvents.emit(
+              "forEventBus",
+              "withTime",
+              "newStartFor",
+              "human cue out",
+              next
+            );
         };
         clock.on("cueIn", onAction);
         clock.on("time", updateOutLength);
@@ -97,7 +101,7 @@ export const useCueProcessor = (
           clock.off("cueIn", onAction);
           clock.off("time", updateOutLength);
         });
-        //        emitter(clock, "cueOut", caption.uuid);
+        //        cueEvents.emit("forEventBus", "cueOut", caption.uuid);
         break;
 
       // while cue in - on CueIn set start of next, set end for last
@@ -105,15 +109,33 @@ export const useCueProcessor = (
       case CUE_STATE.CUE_IN:
         const onInInAction = () => {
           if (next) {
-            clock.emit("withTime", "newStartFor", "human cue in", next);
+            cueEvents.emit(
+              "forEventBus",
+              "withTime",
+              "newStartFor",
+              "human cue in",
+              next
+            );
           }
-          clock.emit("withTime", "newEndFor", "human cue in", caption);
-          clock.emit("moveTo", next);
+          cueEvents.emit(
+            "forEventBus",
+            "withTime",
+            "newEndFor",
+            "human cue in",
+            caption
+          );
+          cueEvents.emit("forEventBus", "moveTo", next);
         };
         const onInOutAction = () => {
-          clock.emit("withTime", "setLastOutTime");
-          clock.emit("withTime", "newEndFor", "human cue in", caption);
-          setCueState(CUE_STATE.CUE_GAP);
+          cueEvents.emit("forEventBus", "withTime", "setLastOutTime");
+          cueEvents.emit(
+            "forEventBus",
+            "withTime",
+            "newEndFor",
+            "human cue in",
+            caption
+          );
+          cueEvents.emit("setCueState", CUE_STATE.CUE_GAP);
         };
         clock.on("setLastOutTime", setLastOutTime);
         clock.on("cueIn", onInInAction);
@@ -130,18 +152,17 @@ export const useCueProcessor = (
       case CUE_STATE.CUE_CANCEL:
         break;
       case CUE_STATE.CUE_SAVE:
-        setCueState(CUE_STATE.CUE_OFF);
-        setPlayLoopCue(PLC.PAUSE);
-        clock.emit("restoreToUndoPoint", undoIndex);
-        clock.emit("togglePlay", false);
+        cueEvents.emit("setCueState", CUE_STATE.CUE_OFF);
+        cueEvents.emit("setPlayLoopCue", PLC.PAUSE);
+        cueEvents.emit("forEventBus", "restoreToUndoPoint", undoIndex);
+        cueEvents.emit("forEventBus", "togglePlay", false);
     }
     if (cleanup.length) {
       return (): void => cleanup.forEach((cb) => cb());
     }
   }, [
+    cueEvents,
     cueState,
-    setCueState,
-    setPlayLoopCue,
     clock,
     caption,
     next,
@@ -149,5 +170,13 @@ export const useCueProcessor = (
     updateInLength,
     updateOutLength,
     lastOutTime,
+    undoIndex,
   ]);
+
+  const subscribeTo = useMemo(
+    () => ["cueIn", "time", "setLastOutTime", "cueIn", "cueOut", "time"],
+    []
+  );
+
+  return [cueEvents, subscribeTo];
 };

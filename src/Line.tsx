@@ -31,7 +31,7 @@ export const Line: React.FC<Caption & { current: boolean }> = (caption) => {
       <span>
         {startRaw} --&gt; {lendRaw} {align || ""}
       </span>
-      <p style={{ marginBlockStart: "0" }}>
+      <p style={{ marginBlock: "0" }}>
         &lt;v {voice}&gt; {text}
       </p>
     </div>
