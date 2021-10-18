@@ -1,5 +1,4 @@
 import React, {
-  EventHandler,
   Reducer,
   useCallback,
   useContext,
@@ -13,27 +12,9 @@ import { EditContext } from "./Transcript";
 import { v4 } from "uuid";
 import { useClock, useKeyboard } from "./Util";
 import "./Button.css";
-import EventEmitter from "events";
 import { useCutProcessor } from "./UseCutProcessor";
 import { useCueProcessor } from "./UseCueProcessor";
 import { LiveClock } from "./LiveClock";
-
-// @ts-ignore
-type EmitterType = (c: EventEmitter, eventName: string, ...args) => () => void;
-type EmitterEventType = (
-  c: EventEmitter,
-  eventName: string,
-  // @ts-ignore
-  ...args
-) => EventHandler<any>;
-export const emitterEvent: EmitterEventType =
-  (c, eventName, ...args) =>
-  (uiEvent) =>
-    c.emit(eventName, uiEvent, ...args);
-export const emitter: EmitterType =
-  (c, eventName, ...args) =>
-  () =>
-    c.emit(eventName, ...args);
 
 export const EditBox: React.FC<{
   caption: Caption;
@@ -61,8 +42,15 @@ export const EditBox: React.FC<{
   const [editBlock, setEditBlock] = useState<HTMLDivElement | null>(null);
   const [newText, setNewText] = useState<string>("");
 
-  useEffect(() => emitter(clock, "cueState", cueState)(), [clock, cueState]);
+  useEffect(() => {
+    console.log("Change cuestate", cueState);
+    clock.emit("cueState", cueState);
+  }, [clock, cueState]);
   useClock("voiceSet", setVoiceSet, []);
+  useEffect(() => {
+    console.log("Change playLoopCue", playLoopCue);
+    clock.emit("playLoopCue", playLoopCue);
+  }, [clock, playLoopCue]);
 
   const keyboardHandler = useCallback(({ key }) => console.log("Key", key), []);
   useEffect(() => {
@@ -118,7 +106,10 @@ export const EditBox: React.FC<{
   useEffect(() => {
     if (!clock) return;
     if (!cues) return;
-    const forward = (n: string, ...args: any) => clock.emit(n, ...args);
+    const forward = (n: string, ...args: any) => {
+      console.log("EmitForCue", n, ...args);
+      clock.emit(n, ...args);
+    };
     const flist = subs.map((en): [string, (...a: any) => void] => [
       en,
       (...args: any) => cues.emit(en, ...args),
@@ -189,7 +180,8 @@ export const EditBox: React.FC<{
         break;
     }
   }, [playLoopCue, caption, hovering, clock]);
-  useEffect(() => emitter(clock, "setLoop", loopState)(), [loopState, clock]);
+
+  useEffect(() => void clock.emit("loopState", loopState), [loopState, clock]);
 
   useEffect(() => {
     if (!editBlock) return;
@@ -212,7 +204,7 @@ export const EditBox: React.FC<{
     const keyHandler = (e: KeyboardEvent) => {
       e.preventDefault();
       clock.emit("newTextFor", newText, "human edit", caption);
-      if (e.shiftKey) clock.emit("moveTo", caption.nextCaption);
+      if (e.shiftKey) clock.emit("moveTo", caption.nextCaption?.index);
     };
     keyboard.on("editEnter", keyHandler);
     return (): void => void keyboard.off("editEnter", keyHandler);
@@ -250,7 +242,10 @@ export const EditBox: React.FC<{
           }}
         >
           <div className={"leftwards"}>
-            <button disabled={!prev} onClick={emitter(clock, "moveTo", prev)}>
+            <button
+              disabled={!prev}
+              onClick={() => clock.emit("moveTo", prev?.index)}
+            >
               Prev
             </button>
           </div>
@@ -258,12 +253,15 @@ export const EditBox: React.FC<{
             <LiveClock />
           </div>
           <div className={"rightwards"}>
-            <button disabled={!next} onClick={emitter(clock, "moveTo", next)}>
+            <button
+              disabled={!next}
+              onClick={() => clock.emit("moveTo", next?.index)}
+            >
               Next
             </button>
           </div>
           <div className={"leftwards"}>
-            <button onClick={emitter(clock, "insertBack", caption?.uuid)}>
+            <button onClick={() => clock.emit("insertBack", caption?.uuid)}>
               &lt; Insert &lt;
             </button>
           </div>
@@ -278,7 +276,7 @@ export const EditBox: React.FC<{
                     <div>
                       <button
                         disabled={cueState === CUE_STATE.CUE_GAP}
-                        onClick={emitter(clock, "cueOut")}
+                        onClick={() => clock.emit("cueOut")}
                       >
                         Out
                       </button>
@@ -287,19 +285,21 @@ export const EditBox: React.FC<{
                   </div>
                   <div>
                     <div>
-                      <button onClick={emitter(clock, "cueIn")}>In</button>
+                      <button onClick={() => clock.emit("cueIn")}>In</button>
                     </div>
                     <div className={"hint"}>Space</div>
                   </div>
                   <div>
                     <div>
-                      <button onClick={emitter(clock, "cueSave")}>Save</button>
+                      <button onClick={() => clock.emit("cueSave")}>
+                        Save
+                      </button>
                     </div>
                     <div className={"hint"}>Backspace</div>
                   </div>
                   <div>
                     <div>
-                      <button onClick={emitter(clock, "cueCancel")}>
+                      <button onClick={() => clock.emit("cueCancel")}>
                         Cancel
                       </button>
                     </div>
@@ -309,12 +309,11 @@ export const EditBox: React.FC<{
               </>
             ) : (
               <>
-                <button onClick={emitter(clock, "cueStart")}>Cue</button>
+                <button onClick={() => clock.emit("cueStart")}>Cue</button>
                 <button
-                  onClick={emitter(
-                    clock,
-                    playLoopCue === PLC.PLAY ? "pause" : "play"
-                  )}
+                  onClick={() =>
+                    clock.emit(playLoopCue === PLC.PLAY ? "pause" : "play")
+                  }
                 >
                   {playLoopCue === PLC.PLAY ? "Pause" : "Play"}
                 </button>
@@ -322,14 +321,14 @@ export const EditBox: React.FC<{
             )}
           </div>
           <div className={"rightwards"}>
-            <button onClick={emitter(clock, "insertAfter", caption?.uuid)}>
+            <button onClick={() => clock.emit("insertAfter", caption?.uuid)}>
               &gt; Insert &gt;
             </button>
           </div>
           <div className={"leftwards"}>
             <button
               disabled={(backSize || 0) < 0.1}
-              onClick={emitter(clock, "gapBefore", caption)}
+              onClick={() => clock.emit("gapBefore", caption)}
             >
               &lt; Gap &lt;
             </button>
@@ -340,7 +339,7 @@ export const EditBox: React.FC<{
           <div className={"rightwards"}>
             <button
               disabled={(foreSize || 0) < 1.001}
-              onClick={emitter(clock, "gapAfter", caption)}
+              onClick={() => clock.emit("gapAfter", caption)}
             >
               &gt; Gap &gt;
             </button>
@@ -348,22 +347,31 @@ export const EditBox: React.FC<{
           <div className={"leftwards"}>
             <button
               disabled={[PLC.PAUSE].includes(playLoopCue) || !prev}
-              onClick={emitter(clock, "withTime", "cutToPrev")}
+              onClick={() => clock.emit("withTime", "cutToPrev")}
             >
-              &lt; Cut to Prev&lt;
+              &lt; Cut &lt;
             </button>
           </div>
           <div>
-            <button onClick={emitter(clock, "playbackRate", 1.5)}>Fast</button>/
-            <button onClick={emitter(clock, "playbackRate", 1)}> Normal</button>
-            /<button onClick={emitter(clock, "playbackRate", 0.5)}>Slow</button>
+            <button onClick={() => clock.emit("playbackRate", 1.5)}>
+              Fast
+            </button>
+            /
+            <button onClick={() => clock.emit("playbackRate", 1)}>
+              {" "}
+              Normal
+            </button>
+            /
+            <button onClick={() => clock.emit("playbackRate", 0.5)}>
+              Slow
+            </button>
           </div>
           <div className={"rightwards"}>
             <button
               disabled={[PLC.PAUSE].includes(playLoopCue) || !next}
-              onClick={emitter(clock, "withTime", "cutToNext")}
+              onClick={() => clock.emit("withTime", "cutToNext")}
             >
-              &gt; Cut to Next &gt;
+              &gt; Cut &gt;
             </button>
           </div>
           <div className={"rightwards"}>{backSize?.toFixed(0)}ms</div>

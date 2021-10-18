@@ -6,7 +6,7 @@ import React, {
 } from "react";
 import { Caption } from "./Caption";
 import { v4 } from "uuid";
-import { makeMutation, Mutation, MutationActions } from "./Mutation";
+import { mutateCaption, Mutation, MutationActions } from "./Mutation";
 import { EditContext } from "./Transcript";
 
 export function Utf8ArrayToStr(array: Uint8Array): string {
@@ -55,7 +55,10 @@ export const toSeconds = (raw: string): number => {
   const [h, m, s] = raw.split(":").map(parseFloat);
   return h * 60 * 60 + m * 60 + s;
 };
-export const parserFactory = (dispatch: React.Dispatch<Mutation>) =>
+export const parserFactory = (
+  dispatch: React.Dispatch<Mutation<Caption>>,
+  forHeader: React.Dispatch<string>
+) =>
   // {
   //   array?: Caption[];
   //   clear: boolean;
@@ -66,18 +69,25 @@ export const parserFactory = (dispatch: React.Dispatch<Mutation>) =>
     start(controller: any) {
       controller.chunk = -1;
       dispatch(
-        makeMutation({
+        mutateCaption({
           action: MutationActions.CLEAR,
           when: new Date(),
           note: "parse start",
         })
       );
       controller.holdover = "";
+      controller.header = false;
     },
     close() {},
     write(chunk: Uint8Array, controller: any) {
       controller.chunk++;
       const stringy = Utf8ArrayToStr(chunk);
+      if (!controller.header) {
+        controller.header = stringy.match(
+          /^.+\r\n([^ ]+) --> ([^ ]+)(align:\w+)?/m
+        );
+        forHeader(controller.header);
+      }
       const lines = `${controller.holdover}${stringy}`
         .split(/\r\n\r\n/)
         .filter((line) => /\d/.test(line));
@@ -101,7 +111,7 @@ export const parserFactory = (dispatch: React.Dispatch<Mutation>) =>
           } as Caption;
         });
       dispatch(
-        makeMutation({
+        mutateCaption({
           action: MutationActions.BULK_ADD,
           bulk: array,
           note: "load from parser",
@@ -127,8 +137,11 @@ export const useClock: (
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const handler = useCallback(eventHandler, [eventHandler, ...deps]);
   useEffect(() => {
+    if (!clock) return;
     clock.on(eventName, handler);
-    return (): void => void clock.off(eventName, handler);
+    return (): void => {
+      void clock.off(eventName, handler);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clock, handler, eventName, ...deps]);
 };

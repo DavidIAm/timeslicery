@@ -1,19 +1,18 @@
 import React, {
   Reducer,
-  useCallback,
   useEffect,
   useMemo,
   useReducer,
   useState,
 } from "react";
 import { Transcript } from "./Transcript";
-import { Caption } from "./Caption";
 import { parserFactory } from "./Util";
 import { MediaBox } from "./MediaBox";
 import { v4 } from "uuid";
 import { CaptionFile } from "./CaptionFile";
-import { makeMutation, Mutation, MutationActions } from "./Mutation";
-import { MutationHandlers } from "./MutationHandlers";
+import { Mutation } from "./Mutation";
+import { useMutationHandlers } from "./MutationHandlers";
+import { Caption } from "./Caption";
 
 export const UrlBox: React.FC = () => {
   const [src, setSrc] = useState<string>("/S3E3_Get_Help.mp3");
@@ -21,7 +20,7 @@ export const UrlBox: React.FC = () => {
     "/S3E3_Get_Help_fuckedup.vtt"
   );
 
-  const CfReducer: Reducer<CaptionFile, Mutation> = (cf, mutation) => {
+  const CfReducer: Reducer<CaptionFile, Mutation<Caption>> = (cf, mutation) => {
     const start = Date.now();
     const ccf = cf.applyMutation(mutation);
     console.log(
@@ -33,34 +32,18 @@ export const UrlBox: React.FC = () => {
     return ccf;
   };
   const [captionFile, dispatch] = useReducer(CfReducer, void 0, (ca) => {
-    console.log("new caption file from reducer init");
     return new CaptionFile(ca);
   });
 
-  const replaceMutationFromPartial = useCallback(
-    (
-      caption: Caption,
-      note: string,
-      whatToDo: (c: Caption) => Partial<Caption>
-    ): void => {
-      console.log(whatToDo(caption));
-      dispatch(
-        makeMutation({
-          action: MutationActions.REPLACE,
-          after: Object.assign({}, caption, whatToDo(caption), { uuid: v4() }),
-          before: caption,
-          note,
-        })
-      );
-    },
-    [dispatch]
-  );
-
+  const [, forHeader] = useState<string>("");
+  useEffect(() => {}, []);
   useEffect(() => {
     if (!transcript) return;
     if (!dispatch) return;
     if (!parserFactory) return;
-    fetch(transcript).then((res) => res?.body?.pipeTo(parserFactory(dispatch)));
+    fetch(transcript).then((res) =>
+      res?.body?.pipeTo(parserFactory(dispatch, forHeader))
+    );
   }, [transcript]);
 
   const noteSet = useMemo(
@@ -85,6 +68,8 @@ export const UrlBox: React.FC = () => {
     ),
     [captionFile.changes, captionFile.undoneChanges]
   );
+
+  useMutationHandlers(dispatch);
 
   return (
     <>
@@ -120,9 +105,6 @@ export const UrlBox: React.FC = () => {
         />
       </div>
       <MediaBox audio={src} />
-      <MutationHandlers
-        replaceMutationFromPartial={replaceMutationFromPartial}
-      />
       <Transcript transcript={captionFile} />
     </>
   );

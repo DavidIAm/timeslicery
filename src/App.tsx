@@ -6,7 +6,11 @@ import { UrlBox } from "./UrlBox";
 
 function App() {
   const keyboard = useMemo(() => new EventEmitter(), []);
-  const clock = useMemo(() => new EventEmitter(), []);
+  const clock = useMemo(() => {
+    const c = new EventEmitter();
+    c.setMaxListeners(30);
+    return c;
+  }, []);
 
   const editContextValue = useMemo(
     () => ({ clock, keyboard }),

@@ -9,5 +9,5 @@ export const LiveClock: React.FC = () => {
     clock.on("time", setTime);
     return (): void => void clock.off("time", setTime);
   }, [clock]);
-  return <>{format(time)}</>;
+  return <span>{format(time)}</span>;
 };

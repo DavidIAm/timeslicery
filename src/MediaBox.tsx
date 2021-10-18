@@ -1,4 +1,5 @@
 import React, {
+  Reducer,
   useCallback,
   useContext,
   useEffect,
@@ -27,6 +28,25 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
   const [loop, setLoop] = useState<LoopState>({ looping: false });
   const [bipPlayer, setBipPlayer] = useState<HTMLAudioElement>();
 
+  const timeUpdateReducer = useCallback(
+    (now, { set, info }) => {
+      if (set) {
+        const time = audioPlayer ? (audioPlayer.currentTime = set) : now;
+        setTimeout(() => {
+          clock.emit("setSelectedTime", set);
+          clock.emit("time", time);
+        }, 0);
+        return time;
+      }
+      if (info) return info;
+      return now;
+    },
+    [clock, audioPlayer]
+  );
+  const [, currentTimeUpdate] = useReducer<
+    Reducer<number, { set?: number; info?: number }>
+  >(timeUpdateReducer, 0);
+
   const [play, togglePlay] = useReducer<
     (p: boolean, f: boolean) => boolean,
     boolean
@@ -52,10 +72,16 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
     return (): void => void clock.off("withTime", withTime);
   }, [audioPlayer, clock]);
 
+  const tellTime = useCallback(() => {
+    if (!audioPlayer) return;
+    clock.emit("time", audioPlayer.currentTime);
+  }, [clock, audioPlayer]);
+
   useClock("blurPause", setBlurPause, []);
   useClock("playbackRate", setPlaybackRate, []);
   useClock("togglePlay", (f) => console.log("the toggle play", f), []);
   useClock("togglePlay", togglePlay, []);
+  useClock("tellTime", tellTime, []);
 
   useEffect(() => {
     if (!clock) return;
@@ -76,10 +102,7 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
   }, [audioPlayer, playbackRate]);
 
   // the loop toggle
-  useEffect(() => {
-    clock.on("setLoop", setLoop);
-    return (): void => void clock.off("setLoop", setLoop);
-  }, [clock]);
+  useClock("loopState", setLoop, []);
 
   useEffect(() => {
     if (!audioPlayer) return;
@@ -90,13 +113,12 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
     let interval: number;
     let timeout = window.setTimeout(() => {
       timeout = 0 || 0;
-      audioPlayer.currentTime = loop.start || 0;
+      currentTimeUpdate({ set: loop.start || 0 });
       console.log("loop initial backToStart");
-      bipPlayer!.play();
+      bipPlayer!.play().then(() => clock.emit("playing"));
       interval = window.setInterval(() => {
         console.log("loop backToStart");
-        audioPlayer.currentTime = loop.start || 0;
-        bipPlayer!.play();
+        currentTimeUpdate({ set: loop.start || 0 });
       }, (((loop.end || 0) - (loop.start || 0)) * 1000) / playbackRate);
     }, ((loop.end - audioPlayer.currentTime) * 1000) / playbackRate);
     return (): void => {
@@ -104,13 +126,13 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
       if (timeout) clearTimeout(timeout);
       if (interval) clearInterval(interval);
     };
-  }, [audioPlayer, play, playbackRate, loop, bipPlayer]);
+  }, [audioPlayer, play, playbackRate, loop, bipPlayer, clock]);
 
   useEffect(() => {
     if (!audioPlayer) return;
     const setStart = (time: number) => {
       console.log("setting time with setStart");
-      audioPlayer.currentTime = time;
+      currentTimeUpdate({ set: time });
     };
     const doPlay = () => togglePlay(true);
     const doPause = () => togglePlay(false);
@@ -124,35 +146,34 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
     };
   }, [clock, audioPlayer]);
 
-  const jumpToHandler = useCallback(
+  const jumpToCaption = useCallback(
     (c: Caption) => {
       if (!c) {
         console.warn("jump to undefined");
         return;
       }
-      clock.emit("time", c.start);
       if (!audioPlayer) return;
-      if (typeof c.start === "undefined") {
-        console.warn("jump h andle undefined?");
+      if (audioPlayer.currentTime >= c.start && audioPlayer.currentTime < c.end)
         return;
-      }
-      if (
-        audioPlayer.currentTime >= c.start &&
-        audioPlayer.currentTime <= c.end
-      )
-        return;
-      console.log("jumping!", c.start);
-      audioPlayer.currentTime = c.start;
+      if (typeof c.start === "undefined") return;
+      console.log("jumping!", c.start, audioPlayer.currentTime);
+      currentTimeUpdate({ set: c.start });
     },
-    [audioPlayer, clock]
+    [audioPlayer]
   );
 
   useEffect(() => {
-    clock.on("jumpToCaption", jumpToHandler);
-    return (): void => void clock.off("jumpToCaption", jumpToHandler);
-  }, [jumpToHandler, clock]);
+    clock.on("jumpToCaption", jumpToCaption);
+    return (): void => void clock.off("jumpToCaption", jumpToCaption);
+  }, [jumpToCaption, clock]);
 
-  const emitTime = useCallback((t) => clock.emit("time", t), [clock]);
+  const emitTime = useCallback(
+    (t) => {
+      currentTimeUpdate({ info: t });
+      clock.emit("time", t);
+    },
+    [clock]
+  );
 
   return (
     <>

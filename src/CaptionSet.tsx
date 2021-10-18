@@ -3,7 +3,7 @@ import { Caption } from "./Caption";
 import {
   CompletedMutation,
   DependedMutation,
-  makeMutation,
+  mutateCaption,
   Mutation,
   MutationActions,
 } from "./Mutation";
@@ -11,12 +11,13 @@ import { v4 } from "uuid";
 
 export class CaptionSet {
   private readonly captions: Caption[];
+  private metaCaptions: Caption[] | undefined;
 
   constructor(initCaptions: Caption[]) {
     this.captions = initCaptions;
   }
 
-  // constructor(changes: CompletedMutation[], initCaptions?: Caption[]) {
+  // constructor(changes: CompletedMutation<Caption, captionSet>[], initCaptions?: Caption[]) {
   //   const start = Date.now();
   // }
   //
@@ -24,12 +25,18 @@ export class CaptionSet {
   //   return new CaptionSet([], [...this.captions.map((c) => ({ ...c }))]);
   // }
   //
-  getCaptions(): Caption[] {
+  getCaptionsNoMeta(): Caption[] {
     return this.captions;
+  }
+  getCaptions(): Caption[] {
+    // TODO: Cache this?
+    this.metaCaptions =
+      this.metaCaptions || CaptionSet.metaUpdate([...this.captions]);
+    return this.metaCaptions;
   }
 
   //
-  // applyMutations(changes: CompletedMutation[]): CaptionSet {
+  // applyMutations(changes: CompletedMutation<Caption, CaptionSet>[]): CaptionSet {
   //   return new CaptionSet(changes, this.captions);
   // }
   //
@@ -42,15 +49,22 @@ export class CaptionSet {
   }
 
   //
-  // completeMutation(mutation: Mutation): CompletedMutation {
+  // completeMutation(mutation: Mutation): CompletedMutation<Caption, CaptionSet> {
   //   return CaptionSet.completeMutation(mutation, this.captions);
   // }
 
+  static startEndMod(current: Caption, next?: Caption): Partial<Caption> {
+    if (next && !next?.AUTHORITATIVE) return {};
+    const end =
+      next && next.start < current.end ? next.start - 0.001 : current.end;
+    return { end };
+  }
+
   static startPrevMod(current: Caption, prev?: Caption): Partial<Caption> {
+    if (current.AUTHORITATIVE) return {};
     const start =
       prev && prev.end >= current.start ? prev.end + 0.001 : current.start;
-    const startRaw = format(start);
-    return { start, startRaw };
+    return { start };
   }
 
   static metaEndFields(current: Caption, next?: Caption) {
@@ -71,66 +85,71 @@ export class CaptionSet {
   }
 
   static metaUpdate(captions: Caption[]): Caption[] {
-    return captions
-      .sort((a, b) => a.start - b.start)
-      .map(
-        (c, i, arr) =>
-          Object.assign(
-            c,
-            { index: i },
-            CaptionSet.metaStartFields(c, i > 0 ? arr[i - 1] : void 0),
-            CaptionSet.metaEndFields(
-              c,
-              i + 1 < arr.length ? arr[i + 1] : void 0
-            )
-          ) as Caption
-      );
+    captions.forEach(
+      (c, i, arr) =>
+        Object.assign(
+          c,
+          { index: i },
+          CaptionSet.metaStartFields(c, i > 0 ? arr[i - 1] : void 0),
+          CaptionSet.metaEndFields(c, i + 1 < arr.length ? arr[i + 1] : void 0)
+        ) as Caption
+    );
+    return captions;
   }
 
-  static conform(captions: Caption[]): Mutation[] {
-    return (
-      captions
-        .sort((a, b) => a.start - b.start)
-        //.flatMap((c, i, a) => (i > 0 && c.uuid === a[i - 1].uuid ? [] : [c])) // DEDUPLICATE
-        .map((c, i, arr) => ({
-          before: c,
-          after: Object.assign(
+  // apply( captionset, conform( (USERmutation + captionset) => incomplete Captionset ) => [mutations to conform]) => conformed captionset
+  static conform(captions: Caption[]): Mutation<Caption>[] {
+    return captions
+      .map((c, i, arr) => ({
+        before: c,
+        after: Caption.clone(
+          Object.assign(
             { uuid: v4() },
             c,
-            CaptionSet.startPrevMod(c, i > 0 ? arr[i - 1] : void 0)
-          ) as Caption,
-        }))
-        .filter(({ before, after }) => !Caption.equals(before, after))
-        .map(({ before, after }) => {
-          return makeMutation({
-            action: MutationActions.REPLACE,
-            note: "conformation adjust",
-            before,
-            after,
-          });
-        })
-    );
+            CaptionSet.startPrevMod(c, i > 0 ? arr[i - 1] : void 0),
+            CaptionSet.startEndMod(c, i + 2 < arr.length ? arr[i + 1] : void 0)
+          ) as Caption
+        ),
+      }))
+      .filter(({ before, after }) => !Caption.equals(before, after))
+      .map(({ before, after }) => {
+        // Maybe this should happen on the next copy of the caption list instead of here...
+        //delete after.AUTHORITATIVE;
+        return mutateCaption({
+          action: MutationActions.REPLACE,
+          note: "conformation adjust",
+          before,
+          after,
+          DEPENDENT: true,
+        });
+      });
   }
 
   static completeMutation(
-    mutation: Mutation,
+    mutation: Mutation<Caption>,
     captionSet: CaptionSet = new CaptionSet([])
-  ): CompletedMutation {
-    const cloned = [...captionSet.getCaptions().map((c) => ({ ...c }))];
-    const dependents = Object.assign(mutation, {
-      dependents: CaptionSet.getDependents(mutation, cloned),
+  ): CompletedMutation<Caption, CaptionSet> {
+    const captions = captionSet.getCaptionsNoMeta();
+    const dependedMutation = Object.assign(mutation, {
+      dependents: CaptionSet.getDependents(mutation, captions),
     });
 
-    return Object.assign(dependents, {
-      captionSet: CaptionSet.applyChanges([dependents], cloned),
+    return Object.assign(dependedMutation, {
+      set: CaptionSet.applyChanges([dependedMutation], captions),
     });
   }
 
-  static getDependents(mutation: Mutation, captions: Caption[]): Mutation[] {
+  static getDependents(
+    mutation: Mutation<Caption>,
+    captions: Caption[]
+  ): Mutation<Caption>[] {
     return CaptionSet.conform(CaptionSet.applyMutation(mutation, captions));
   }
 
-  static applyMutation(mutation: Mutation, captions: Caption[]): Caption[] {
+  static applyMutation(
+    mutation: Mutation<Caption>,
+    captions: Caption[]
+  ): Caption[] {
     switch (mutation.action) {
       case MutationActions.REPLACE:
         return CaptionSet.mutate_replace(mutation, captions);
@@ -150,23 +169,23 @@ export class CaptionSet {
   }
 
   static applyChanges(
-    changes: DependedMutation[],
+    changes: DependedMutation<Caption>[],
     initCaptions: Caption[] = []
   ): CaptionSet {
     return new CaptionSet(
-      CaptionSet.metaUpdate(
-        changes
-          .flatMap((m) => [m, ...(m.dependents || [])])
-          .reduce<Caption[]>(
-            (cf, mutation: Mutation): Caption[] =>
-              CaptionSet.applyMutation(mutation, cf),
-            initCaptions
-          )
-      )
+      changes
+        .flatMap((m) => [m, ...(m.dependents || [])])
+        .reduce<Caption[]>((cf, mutation: Mutation<Caption>): Caption[] => {
+          const out = CaptionSet.applyMutation(mutation, cf);
+          return out;
+        }, initCaptions)
     );
   }
 
-  static mutate_add(mutation: Mutation, captions: Caption[]): Caption[] {
+  static mutate_add(
+    mutation: Mutation<Caption>,
+    captions: Caption[]
+  ): Caption[] {
     return [...captions, ...(mutation.after ? [mutation.after] : [])].sort(
       (a, b) => a.start - b.start
     );
@@ -176,20 +195,31 @@ export class CaptionSet {
     return [];
   }
 
-  static mutate_delete(mutation: Mutation, captions: Caption[]): Caption[] {
+  static mutate_delete(
+    mutation: Mutation<Caption>,
+    captions: Caption[]
+  ): Caption[] {
     return captions.filter((c) => mutation.before?.uuid !== c.uuid);
   }
 
-  static mutate_bulk_add(mutation: Mutation, captions: Caption[]): Caption[] {
+  static mutate_bulk_add(
+    mutation: Mutation<Caption>,
+    captions: Caption[]
+  ): Caption[] {
     return [...captions, ...(mutation.bulk || [])].sort(
       (a, b) => a.start - b.start
     );
   }
 
-  static mutate_replace(mutation: Mutation, captions: Caption[]): Caption[] {
+  static mutate_replace(
+    mutation: Mutation<Caption>,
+    captions: Caption[]
+  ): Caption[] {
     return [
       ...captions.filter((caption) => caption.uuid !== mutation.before?.uuid),
-      ...(mutation.after ? [mutation.after] : []),
+      ...(mutation.after
+        ? [{ ...mutation.after, AUTHORITATIVE: !mutation.DEPENDENT }]
+        : []),
     ].sort((a, b) => a.start - b.start);
   }
 }

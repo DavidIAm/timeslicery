@@ -1,6 +1,6 @@
 import { CaptionFile } from "./CaptionFile";
 import { CaptionSet } from "./CaptionSet";
-import { makeMutation, MutationActions } from "./Mutation";
+import { mutateCaption, MutationActions } from "./Mutation";
 import { v4 } from "uuid";
 
 describe("CaptionFile", () => {
@@ -22,7 +22,7 @@ describe("CaptionFile", () => {
 
   test("to have more changes", () => {
     const changed = new CaptionFile().applyMutation(
-      makeMutation({
+      mutateCaption({
         action: MutationActions.ADD,
         note: "TEST",
         after: {

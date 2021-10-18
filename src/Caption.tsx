@@ -12,6 +12,7 @@ export interface Caption {
   foreSize?: number;
   nextCaption?: Caption;
   prevCaption?: Caption;
+  AUTHORITATIVE?: Boolean;
 }
 
 const ignoreFields = [
@@ -21,9 +22,16 @@ const ignoreFields = [
   "foreSize",
   "nextCaption",
   "prevCaption",
+  "AUTHORITATIVE",
+  "startRaw",
+  "endRaw",
 ];
 
 export class Caption {
+  static clone({ uuid, align, text, voice, start, end }: Caption): Caption {
+    return { uuid, align, text, voice, start, end };
+  }
+
   static equals(a: Caption, b: Caption) {
     const akeys = Object.keys(a).filter(
       (k) => !ignoreFields.includes(k)
@@ -32,10 +40,7 @@ export class Caption {
       (k) => !ignoreFields.includes(k)
     ) as (keyof Caption)[];
     if (akeys.length !== bkeys.length) return false;
-    if (akeys.find((ak) => !bkeys.includes(ak))) return false;
-    if (bkeys.find((bk) => !akeys.includes(bk))) return false;
-    if (akeys.find((ak) => a[ak] !== b[ak])) return false;
-    return true;
+    return !akeys.find((ak) => a[ak] !== b[ak]);
   }
 }
 

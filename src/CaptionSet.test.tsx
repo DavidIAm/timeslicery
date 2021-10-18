@@ -1,34 +1,9 @@
-import { makeMutation, MutationActions } from "./Mutation";
+import { mutateCaption, MutationActions } from "./Mutation";
 import { v4 } from "uuid";
 import { format } from "./Util";
 import { CaptionSet } from "./CaptionSet";
+import { bark, woof, yay } from "./TestCaptions";
 
-const yay = {
-  start: 0,
-  end: 1,
-  text: "yay",
-  uuid: v4(),
-  startRaw: format(0),
-  endRaw: format(1),
-  align: "",
-  voice: "",
-};
-const woof = {
-  start: 2,
-  end: 3,
-  text: "woof",
-  uuid: v4(),
-  startRaw: format(2),
-  endRaw: format(3),
-  align: "",
-  voice: "",
-};
-const bark = Object.assign({}, woof, {
-  uuid: v4(),
-  text: "bark",
-  start: 0.5,
-  end: 2.5,
-});
 describe("CaptionSet", () => {
   describe("CaptionSetMutationEvents", () => {
     test("CaptionSets can be empty", () => {
@@ -39,7 +14,7 @@ describe("CaptionSet", () => {
     test("CaptionSets can have an element", () => {
       const underTest = CaptionSet.applyChanges([
         CaptionSet.completeMutation(
-          makeMutation({
+          mutateCaption({
             action: MutationActions.ADD,
             note: "yay",
             after: {
@@ -61,37 +36,37 @@ describe("CaptionSet", () => {
 
     test("CaptionSets can bulk load elements", () => {
       const underTest = CaptionSet.completeMutation(
-        makeMutation({
+        mutateCaption({
           action: MutationActions.BULK_ADD,
           note: "yay",
           bulk: [yay, woof],
         })
-      ).captionSet;
+      ).set;
       expect(underTest.getCaptions()).toHaveLength(2);
       expect(
         underTest.getCaptions().find((c) => woof.uuid === c.uuid)
       ).toBeDefined();
       expect(
         CaptionSet.completeMutation(
-          makeMutation({
+          mutateCaption({
             action: MutationActions.BULK_ADD,
             note: "bork?",
             bulk: [bark],
           }),
           underTest
-        ).captionSet.getCaptions()
+        ).set.getCaptions()
       ).toHaveLength(3);
     });
 
     test("CaptionSets can delete elements", () => {
       const underTest = CaptionSet.completeMutation(
-        makeMutation({
+        mutateCaption({
           action: MutationActions.BULK_ADD,
           note: "yay",
           bulk: [yay, woof],
         })
-      ).captionSet;
-      const deleteMutation = makeMutation({
+      ).set;
+      const deleteMutation = mutateCaption({
         action: MutationActions.DELETE,
         note: "yay",
         before: yay,
@@ -99,46 +74,43 @@ describe("CaptionSet", () => {
       expect(underTest.getCaptions()).toHaveLength(2);
       expect(
         CaptionSet.completeMutation(deleteMutation, underTest)
-          .captionSet.getCaptions()
+          .set.getCaptions()
           .find(() => true)?.uuid
       ).toBe(woof.uuid);
       expect(
         CaptionSet.completeMutation(deleteMutation, underTest)
-          .captionSet.getCaptions()
+          .set.getCaptions()
           .find(() => true)?.uuid
       ).not.toBe(yay.uuid);
     });
 
     test("CaptionSets can clear all", () => {
       const underTest = CaptionSet.completeMutation(
-        makeMutation({
+        mutateCaption({
           action: MutationActions.BULK_ADD,
           note: "yay",
           bulk: [yay, woof],
         })
-      ).captionSet;
-      const clearMutation = makeMutation({
+      ).set;
+      const clearMutation = mutateCaption({
         action: MutationActions.CLEAR,
         note: "yay",
       });
       expect(underTest.getCaptions()).toHaveLength(2);
       expect(
-        CaptionSet.completeMutation(
-          clearMutation,
-          underTest
-        ).captionSet.getCaptions()
+        CaptionSet.completeMutation(clearMutation, underTest).set.getCaptions()
       ).toHaveLength(0);
     });
 
     test("CaptionSets can replace data", () => {
       const underTest = CaptionSet.completeMutation(
-        makeMutation({
+        mutateCaption({
           action: MutationActions.BULK_ADD,
           note: "yay",
           bulk: [yay, woof],
         })
-      ).captionSet;
-      const replaceMutation = makeMutation({
+      ).set;
+      const replaceMutation = mutateCaption({
         action: MutationActions.REPLACE,
         note: "woof is a bark",
         before: woof,
@@ -147,12 +119,12 @@ describe("CaptionSet", () => {
       expect(underTest.getCaptions()).toHaveLength(2);
       expect(
         CaptionSet.completeMutation(replaceMutation, underTest)
-          .captionSet.getCaptions()
+          .set.getCaptions()
           .find((c) => c.uuid === bark.uuid)?.text
       ).toEqual("bark");
       expect(
         CaptionSet.completeMutation(replaceMutation, underTest)
-          .captionSet.getCaptions()
+          .set.getCaptions()
           .find((c) => c.uuid === woof.uuid)?.text
       ).not.toEqual("woof");
     });
@@ -161,12 +133,12 @@ describe("CaptionSet", () => {
   describe("Data Rule Conformation", () => {
     test("sort order by start time", () => {
       const underTest = CaptionSet.completeMutation(
-        makeMutation({
+        mutateCaption({
           action: MutationActions.BULK_ADD,
           note: "yay",
           bulk: [woof, yay, bark],
         })
-      ).captionSet;
+      ).set;
       const caps = underTest.getCaptions();
       expect(caps[0]?.uuid).toEqual(yay.uuid);
       expect(caps[1]?.uuid).toEqual(bark.uuid);
@@ -175,24 +147,24 @@ describe("CaptionSet", () => {
 
     test("index element is the index in the captions array", () => {
       const underTest = CaptionSet.completeMutation(
-        makeMutation({
+        mutateCaption({
           action: MutationActions.BULK_ADD,
           note: "yay",
           bulk: [woof, yay, bark],
         })
-      ).captionSet;
+      ).set;
       expect(underTest.getCaptions()).toHaveLength(3);
       underTest.getCaptions().forEach((e, i) => expect(e.index).toEqual(i));
     });
 
     test("start is at least one ms after the previous end", () => {
       const underTest = CaptionSet.completeMutation(
-        makeMutation({
+        mutateCaption({
           action: MutationActions.BULK_ADD,
           note: "yay",
           bulk: [woof, yay, bark],
         })
-      ).captionSet;
+      ).set;
       expect(underTest.getCaptions()).toHaveLength(3);
       underTest
         .getCaptions()
@@ -203,12 +175,12 @@ describe("CaptionSet", () => {
 
     test("startRaw matches the format rules", () => {
       const underTest = CaptionSet.completeMutation(
-        makeMutation({
+        mutateCaption({
           action: MutationActions.BULK_ADD,
           note: "yay",
           bulk: [woof, yay, bark],
         })
-      ).captionSet;
+      ).set;
       expect(underTest.getCaptions()).toHaveLength(3);
       const caps = underTest.getCaptions();
       expect(caps[0]?.startRaw).toEqual("00:00:00.000");
@@ -218,12 +190,12 @@ describe("CaptionSet", () => {
 
     test("endRaw matches the format rules", () => {
       const underTest = CaptionSet.completeMutation(
-        makeMutation({
+        mutateCaption({
           action: MutationActions.BULK_ADD,
           note: "yay",
           bulk: [woof, yay, bark],
         })
-      ).captionSet;
+      ).set;
       expect(underTest.getCaptions()).toHaveLength(3);
       const caps = underTest.getCaptions();
       expect(caps[0]?.endRaw).toEqual("00:00:01.000");
@@ -233,12 +205,12 @@ describe("CaptionSet", () => {
 
     test("prevCaption is the previous caption", () => {
       const underTest = CaptionSet.completeMutation(
-        makeMutation({
+        mutateCaption({
           action: MutationActions.BULK_ADD,
           note: "yay",
           bulk: [woof, yay, bark],
         })
-      ).captionSet;
+      ).set;
       expect(underTest.getCaptions()).toHaveLength(3);
       underTest
         .getCaptions()
@@ -249,12 +221,12 @@ describe("CaptionSet", () => {
 
     test("backSize has the ms between this start and the end of the previous caption", () => {
       const underTest = CaptionSet.completeMutation(
-        makeMutation({
+        mutateCaption({
           action: MutationActions.BULK_ADD,
           note: "yay",
           bulk: [woof, yay, bark],
         })
-      ).captionSet;
+      ).set;
       expect(underTest.getCaptions()).toHaveLength(3);
       const caps = underTest.getCaptions();
       expect(caps[0]?.backSize).toBeCloseTo(0, 3);
@@ -264,12 +236,12 @@ describe("CaptionSet", () => {
 
     test("nextCaption is the next caption", () => {
       const underTest = CaptionSet.completeMutation(
-        makeMutation({
+        mutateCaption({
           action: MutationActions.BULK_ADD,
           note: "yay",
           bulk: [woof, yay, bark],
         })
-      ).captionSet;
+      ).set;
       expect(underTest.getCaptions()).toHaveLength(3);
       underTest
         .getCaptions()
@@ -282,12 +254,12 @@ describe("CaptionSet", () => {
 
     test("foreSize has the ms between this end and the start of the next caption", () => {
       const underTest = CaptionSet.completeMutation(
-        makeMutation({
+        mutateCaption({
           action: MutationActions.BULK_ADD,
           note: "yay",
           bulk: [woof, yay, bark],
         })
-      ).captionSet;
+      ).set;
       expect(underTest.getCaptions()).toHaveLength(3);
       const caps = underTest.getCaptions();
       expect(caps[0]?.foreSize).toBeCloseTo(1, 3);

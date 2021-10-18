@@ -1,7 +1,6 @@
 import { v4 } from "uuid";
 import { format } from "./Util";
 import { Caption } from "./Caption";
-import { CaptionSet } from "./CaptionSet";
 
 export enum MutationActions {
   CLEAR,
@@ -11,31 +10,30 @@ export enum MutationActions {
   BULK_ADD,
 }
 
-export type CompletedMutation = Mutation & WithDependents & WithCaptionSet;
-export type DependedMutation = Mutation & WithDependents;
-export interface WithCaptionSet {
-  captionSet: CaptionSet;
+export type CompletedMutation<T, S> = Mutation<T> &
+  WithDependents<T> &
+  WithSet<S>;
+export type DependedMutation<T> = Mutation<T> & WithDependents<T>;
+export interface WithSet<S> {
+  set: S;
 }
-export interface WithDependents {
-  dependents: Mutation[];
+export interface WithDependents<T> {
+  dependents: Mutation<T>[];
 }
-export interface Mutation {
+export interface Mutation<T> {
   action: MutationActions;
   uuid: string;
   when: Date;
   note: string;
-  before?: Caption;
-  after?: Caption;
-  bulk?: Caption[];
+  before?: T;
+  after?: T;
+  bulk?: T[];
+  DEPENDENT?: Boolean;
 }
 
-export const makeMutation: (m: Partial<Mutation>) => Mutation = ({
-  action,
-  note,
-  bulk,
-  before,
-  after,
-}) => {
+export const mutateCaption: (
+  m: Partial<Mutation<Caption>>
+) => Mutation<Caption> = ({ action, note, bulk, before, after }) => {
   if (typeof action === "undefined")
     throw new Error("Mutation requires action");
   if (!note) throw new Error("Mutation requires note");

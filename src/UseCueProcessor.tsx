@@ -1,6 +1,5 @@
 import { Caption, CUE_STATE, PLC } from "./Caption";
-import { useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { EditContext } from "./Transcript";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { format, useClock } from "./Util";
 import EventEmitter from "events";
 
@@ -11,22 +10,79 @@ export const useCueProcessor = (
   prev?: Caption
 ): [EventEmitter, string[]] => {
   const cueEvents = useMemo(() => new EventEmitter(), []);
-  const { clock } = useContext(EditContext);
   const [undoIndex, setUndoIndex] = useState<number>();
 
-  useClock("saveUndoIndex", setUndoIndex, []);
   useEffect(() => console.log("undo index now", undoIndex), [undoIndex]);
+
+  useEffect(() => {
+    cueEvents.on("saveUndoIndex", setUndoIndex);
+    return (): void => void cueEvents.off("saveUndoIndex", setUndoIndex);
+  }, [cueEvents]);
+
   useClock(
     "cueStart",
     () => {
       cueEvents.emit("setPlayLoopCue", PLC.CUE);
       cueEvents.emit("setCueState", CUE_STATE.CUE_START);
+      cueEvents.emit("forEventBus", "setSelectedTime", caption.start);
       cueEvents.emit("forEventBus", "jumpToCaption", caption);
       cueEvents.emit("forEventBus", "withCurrentUndoIndex", "saveUndoIndex");
+      console.log("CUE START EVENT TOGGLE");
       cueEvents.emit("forEventBus", "togglePlay", true);
       cueEvents.emit("setCueState", CUE_STATE.CUE_IN);
     },
-    [cueEvents, clock]
+    [cueEvents]
+  );
+
+  useClock(
+    "cueIn",
+    () => {
+      // are we cueing?
+      // If so, end the current one
+      // regardless, start the next one
+      const onInInAction = () => {
+        if (next) {
+          cueEvents.emit(
+            "forEventBus",
+            "withTime",
+            "newStartFor",
+            "human cue in in with next",
+            next
+          );
+          cueEvents.emit("forEventBus", "setSelectedTime", next?.start);
+        }
+        cueEvents.emit(
+          "forEventBus",
+          "withTime",
+          "newEndFor",
+          "human cue in in",
+          caption
+        );
+        cueEvents.emit("forEventBus", "moveTo", next?.index);
+      };
+      const onInOutAction = () => {
+        cueEvents.emit("forEventBus", "withTime", "setLastOutTime");
+        cueEvents.emit(
+          "forEventBus",
+          "withTime",
+          "newEndFor",
+          "human cue in out",
+          caption
+        );
+        cueEvents.emit("setCueState", CUE_STATE.CUE_GAP);
+      };
+      cueEvents.on("setLastOutTime", setLastOutTime);
+      cueEvents.on("cueIn", onInInAction);
+      cueEvents.on("cueOut", onInOutAction);
+      cueEvents.on("time", updateInLength);
+      return (): void => {
+        cueEvents.off("setLastOutTime", setLastOutTime);
+        cueEvents.off("time", updateInLength);
+        cueEvents.off("cueIn", onInInAction);
+        cueEvents.off("cueOut", onInOutAction);
+      };
+    },
+    [cueEvents]
   );
 
   useClock(
@@ -40,13 +96,15 @@ export const useCueProcessor = (
   useClock(
     "cueCancel",
     () => {
+      console.log("CANCEL EVENT TOGGLE");
       cueEvents.emit("forEventBus", "togglePlay", false);
       if (undoIndex)
         cueEvents.emit("forEventBus", "setCurrentUndoIndex", undoIndex);
+      else console.warn("cancel no events", undoIndex);
       cueEvents.emit("setCueState", CUE_STATE.CUE_OFF);
       cueEvents.emit("setPlayLoopCue", PLC.PAUSE);
     },
-    [cueEvents, clock]
+    [cueEvents]
   );
 
   const updateInLength = useCallback(
@@ -59,6 +117,7 @@ export const useCueProcessor = (
     },
     [caption?.start, cueEvents]
   );
+
   const [lastOutTime, setLastOutTime] = useState<number>(0);
   const updateOutLength = useCallback(
     (time) => {
@@ -70,14 +129,16 @@ export const useCueProcessor = (
     },
     [caption?.end, lastOutTime, cueEvents]
   );
+
   useEffect(() => {
-    if (!clock) return;
+    cueEvents.emit("cueState", cueState);
     const cleanup: (() => void)[] = [];
     switch (cueState) {
       case CUE_STATE.CUE_OFF:
         break;
       case CUE_STATE.CUE_START:
         cueEvents.emit("forEventBus", "jumpToCaption", caption);
+        console.log("Setting selected time");
         cueEvents.emit("forEventBus", "saveNewUndoPoint");
         cueEvents.emit("forEventBus", "togglePlay", true);
         cueEvents.emit("setCueState", CUE_STATE.CUE_GAP);
@@ -95,11 +156,12 @@ export const useCueProcessor = (
               next
             );
         };
-        clock.on("cueIn", onAction);
-        clock.on("time", updateOutLength);
+        cueEvents.emit("forEventBus", "setSelectedTime", caption.end);
+        cueEvents.on("cueIn", onAction);
+        cueEvents.on("time", updateOutLength);
         cleanup.push((): void => {
-          clock.off("cueIn", onAction);
-          clock.off("time", updateOutLength);
+          cueEvents.off("cueIn", onAction);
+          cueEvents.off("time", updateOutLength);
         });
         //        cueEvents.emit("forEventBus", "cueOut", caption.uuid);
         break;
@@ -107,46 +169,6 @@ export const useCueProcessor = (
       // while cue in - on CueIn set start of next, set end for last
       // on cueOut, set end of current
       case CUE_STATE.CUE_IN:
-        const onInInAction = () => {
-          if (next) {
-            cueEvents.emit(
-              "forEventBus",
-              "withTime",
-              "newStartFor",
-              "human cue in",
-              next
-            );
-          }
-          cueEvents.emit(
-            "forEventBus",
-            "withTime",
-            "newEndFor",
-            "human cue in",
-            caption
-          );
-          cueEvents.emit("forEventBus", "moveTo", next);
-        };
-        const onInOutAction = () => {
-          cueEvents.emit("forEventBus", "withTime", "setLastOutTime");
-          cueEvents.emit(
-            "forEventBus",
-            "withTime",
-            "newEndFor",
-            "human cue in",
-            caption
-          );
-          cueEvents.emit("setCueState", CUE_STATE.CUE_GAP);
-        };
-        clock.on("setLastOutTime", setLastOutTime);
-        clock.on("cueIn", onInInAction);
-        clock.on("cueOut", onInOutAction);
-        clock.on("time", updateInLength);
-        cleanup.push((): void => {
-          clock.off("setLastOutTime", setLastOutTime);
-          clock.off("time", updateInLength);
-          clock.off("cueIn", onInInAction);
-          clock.off("cueOut", onInOutAction);
-        });
         break;
 
       case CUE_STATE.CUE_CANCEL:
@@ -155,6 +177,7 @@ export const useCueProcessor = (
         cueEvents.emit("setCueState", CUE_STATE.CUE_OFF);
         cueEvents.emit("setPlayLoopCue", PLC.PAUSE);
         cueEvents.emit("forEventBus", "restoreToUndoPoint", undoIndex);
+        console.log("CUE SAVE MODE TOGGLE");
         cueEvents.emit("forEventBus", "togglePlay", false);
     }
     if (cleanup.length) {
@@ -163,7 +186,6 @@ export const useCueProcessor = (
   }, [
     cueEvents,
     cueState,
-    clock,
     caption,
     next,
     prev,
@@ -174,7 +196,14 @@ export const useCueProcessor = (
   ]);
 
   const subscribeTo = useMemo(
-    () => ["cueIn", "time", "setLastOutTime", "cueIn", "cueOut", "time"],
+    () => [
+      "time",
+      "setLastOutTime",
+      "cueIn",
+      "cueOut",
+      "time",
+      "saveUndoIndex",
+    ],
     []
   );
 

@@ -3,30 +3,30 @@ import { v4 } from "uuid";
 import { Caption } from "./Caption";
 import {
   CompletedMutation,
-  makeMutation,
+  mutateCaption,
   Mutation,
   MutationActions,
 } from "./Mutation";
 import { CaptionSet } from "./CaptionSet";
 
-const defaultChanges: CompletedMutation[] = [
+const defaultChanges: CompletedMutation<Caption, CaptionSet>[] = [
   Object.assign(
-    { dependents: [], captionSet: new CaptionSet([]) },
-    makeMutation({ action: MutationActions.CLEAR, note: "app init" })
+    { dependents: [], set: new CaptionSet([]) },
+    mutateCaption({ action: MutationActions.CLEAR, note: "app init" })
   ),
 ];
 
 export class CaptionFile extends EventEmitter {
   public chunks: { [key: number]: Caption[] } = {};
-  public changes: CompletedMutation[] = [];
+  public changes: CompletedMutation<Caption, CaptionSet>[] = [];
 
-  public undoneChanges: CompletedMutation[] = [];
+  public undoneChanges: CompletedMutation<Caption, CaptionSet>[] = [];
   private index: { [key: string]: number } = {};
   private uuidString: string = "";
 
   constructor(
-    changes: CompletedMutation[] = defaultChanges,
-    undoneChanges: CompletedMutation[] = []
+    changes: CompletedMutation<Caption, CaptionSet>[] = defaultChanges,
+    undoneChanges: CompletedMutation<Caption, CaptionSet>[] = []
   ) {
     super();
     this.uuid = v4();
@@ -35,7 +35,7 @@ export class CaptionFile extends EventEmitter {
   }
 
   get captionSet(): CaptionSet {
-    return this.changes[this.changes.length - 1]?.captionSet;
+    return this.changes[this.changes.length - 1]?.set;
   }
 
   set uuid(uuid: string) {
@@ -61,10 +61,10 @@ export class CaptionFile extends EventEmitter {
     throw new Error("unimplemented");
   }
 
-  flip(m: Mutation) {
+  flip(m: Mutation<Caption>) {
     const { action, when, note, before: after, after: before } = m;
 
-    return makeMutation({ action, when, note, before, after });
+    return mutateCaption({ action, when, note, before, after });
   }
 
   get captions(): Caption[] {
@@ -133,7 +133,7 @@ export class CaptionFile extends EventEmitter {
     this.emit("voices", this.collectVoices());
   }
 
-  applyMutation(mutation: Mutation) {
+  applyMutation(mutation: Mutation<Caption>) {
     if (this.changes.find((m) => m.uuid === mutation.uuid))
       return new CaptionFile(this.changes, this.undoneChanges);
     const complete = CaptionSet.completeMutation(mutation, this.captionSet);

@@ -1,10 +1,12 @@
 import React, {
+  createContext,
   Reducer,
   useCallback,
   useContext,
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
 } from "react";
 import { Caption, CUE_STATE } from "./Caption";
@@ -43,6 +45,7 @@ type JumpTupleType = [
 ];
 
 export function up(event: KeyboardEvent, ...args: JumpTupleType): void {
+  console.log("offset", offset(event));
   return jump(-1 * offset(event), ...args);
 }
 
@@ -106,16 +109,25 @@ const positionOf = (captions: Caption[], thisTimepoint: number) => {
   }
 };
 
+export const CueContext = createContext<CUE_STATE>(CUE_STATE.CUE_OFF);
 export const Lines: React.FC<LinesProps> = ({ captions }) => {
   const { keyboard, clock } = useContext(EditContext);
   const [captionBlock, setCaptionBlock] = useState<HTMLDivElement | null>();
   const [cueState, setCueState] = useState<CUE_STATE>(CUE_STATE.CUE_OFF);
+  useClock("cueState", setCueState, []);
   const [{ top, bottom }, setWindow] = useState<{
     top: number;
     bottom: number;
   }>(() => ({ top: 0, bottom: 5 }));
+  const oldSize = useRef(captions.length);
+  useEffect(() => {
+    if (oldSize.current === captions.length) oldSize.current = captions.length;
+    if (!captions.length) return;
+    clock.emit("jumpToCaption", captions[0]);
+    changePosition({ abs: 0 });
+  }, [clock, captions]);
 
-  useClock("cueState", setCueState, []);
+  useClock("setCueState", setCueState, []);
 
   const voiceSet = useMemo(
     () => new Set(captions.map((c) => c.voice)),
@@ -150,6 +162,7 @@ export const Lines: React.FC<LinesProps> = ({ captions }) => {
   const positionReducer = useCallback<
     Reducer<number, { abs?: number; rel?: number }>
   >((state, { abs, rel }) => {
+    console.log("position reducer", abs, rel);
     if (rel) return state + rel;
     else if (typeof abs !== "undefined") return abs;
     return -1;
@@ -158,38 +171,53 @@ export const Lines: React.FC<LinesProps> = ({ captions }) => {
   const [position, changePosition] = useReducer(positionReducer, -1, (t) => t);
 
   const play = useCallback<(e: KeyboardEvent) => void>(
-    () => void clock.emit("togglePlay"),
-    [clock]
+    () => void 1 /*(clock.emit("togglePlay")*/,
+    [
+      /*clock*/
+    ]
   );
 
-  useClock(
-    "moveTo",
-    (caption: Caption) => changePosition({ abs: caption!.index }),
-    []
-  );
+  useClock("moveTo", (abs: number) => changePosition({ abs }), []);
 
+  // move up
   useEffect(() => {
-    const moveDown = (event: KeyboardEvent) =>
-      down(event, captions, clock, position, changePosition, "nextCaption");
+    if (position < 0) return;
     const moveUp = (event: KeyboardEvent) =>
       up(event, captions, clock, position, changePosition, "prevCaption");
-    clock.on("moveDown", moveDown).on("moveUp", moveUp);
-    keyboard
-      .on("linesKeyJ", moveDown)
-      .on("linesKeyK", moveUp)
-      .on("linesSpace", play);
+    keyboard.on("linesKeyK", moveUp);
+    clock.on("moveUp", moveUp);
     return () => {
-      clock.off("moveDown", moveDown).off("moveUp", moveUp);
-      keyboard
-        .off("linesKeyJ", moveDown)
-        .off("linesKeyK", moveUp)
-        .off("linesSpace", play);
+      clock.off("moveUp", moveUp);
+      keyboard.off("linesKeyK", moveUp);
+    };
+  }, [keyboard, clock, captions, position]);
+
+  // move down
+  useEffect(() => {
+    if (position > captions.length) return;
+    const moveDown = (event: KeyboardEvent) =>
+      down(event, captions, clock, position, changePosition, "nextCaption");
+    clock.on("moveDown", moveDown);
+    keyboard.on("linesKeyJ", moveDown);
+    return () => {
+      clock.off("moveDown", moveDown);
+      keyboard.off("linesKeyJ", moveDown);
+    };
+  }, [keyboard, clock, position, captions, play]);
+
+  // play toggle
+  useEffect(() => {
+    keyboard.on("linesSpace", play);
+    return () => {
+      keyboard.off("linesSpace", play);
     };
   }, [keyboard, clock, position, captions, play]);
 
   useEffect(() => {
-    if (position < 0 || !captions[Math.floor(position)]) return;
-    clock.emit("jumpToCaption", captions[position]);
+    const candidate =
+      captions[Math.floor(position + 0.5)] || captions[captions.length - 1];
+    if (position < 0 || !candidate) return; // dunno
+    clock.emit("jumpToCaptionn", candidate, position);
     const top = Math.max(Math.floor(position) - 2, 0);
     setWindow({
       top,
@@ -224,8 +252,9 @@ export const Lines: React.FC<LinesProps> = ({ captions }) => {
     }
   }, [clock, captions, position, cueState]);
 
+  useEffect(() => console.log("cue state is now", cueState), [cueState]);
   return (
-    <>
+    <CueContext.Provider value={cueState}>
       <EditBox
         caption={captions[Math.min(Math.max(position, 0), captions.length - 1)]}
         prev={position ? captions[position - 1] : void 0}
@@ -237,8 +266,8 @@ export const Lines: React.FC<LinesProps> = ({ captions }) => {
         ref={setCaptionBlock}
         id={"captionBlock"}
       >
-        <LineSet top={top} position={position} bottom={bottom} set={captions} />
+        <LineSet top={top} bottom={bottom} set={captions} />
       </div>
-    </>
+    </CueContext.Provider>
   );
 };
