@@ -60,10 +60,6 @@ export const Gap: React.FC<{
 export const LineAndAfterGap: React.FC<{ caption: Caption }> = ({
   caption,
 }) => {
-  useEffect(() => {
-    console.log("mount LAAG");
-    return (): void => console.log("unmount LAAG");
-  }, []);
   if (!caption) return <p>No caption loaded</p>;
   return (
     <div>
@@ -82,10 +78,6 @@ export const LineSet: React.FC<{
   top: number;
   bottom: number;
 }> = ({ set, top, bottom }) => {
-  useEffect(() => {
-    console.log("mount LineSet");
-    return (): void => console.log("unmount LineSet");
-  }, []);
   useEffect(() => console.log("mutation in set"), [set]);
   useEffect(() => console.log("mutation in top"), [top]);
   useEffect(() => console.log("mutation in bottom"), [bottom]);

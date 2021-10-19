@@ -14,7 +14,6 @@ const rmfp: ReplaceMutationFromPartial = (
   note: string,
   whatToDo: (c: Caption) => Partial<Caption>
 ): Mutation<Caption> => {
-  console.log("mustation on caption:", caption.text, note, whatToDo(caption));
   return mutateCaption({
     action: MutationActions.REPLACE,
     after: Object.assign({}, caption, whatToDo(caption), { uuid: v4() }),
@@ -68,7 +67,6 @@ export const useMutationHandlers: (
   useClock(
     "newEndFor",
     (time, note, caption) => {
-      console.log("new end for", caption, time, note);
       if (!caption) throw new Error("can't add new voice for unknown caption");
       return dispatch(
         rmfp(caption, "new end : " + note, () => ({
@@ -83,7 +81,6 @@ export const useMutationHandlers: (
     "newTextFor",
     (text, note, caption) => {
       if (!caption) throw new Error("can't add new voice for unknown caption");
-      console.log("new text for", text, caption, note);
       return dispatch(
         rmfp(caption, "new text : " + note, () => ({
           text,
@@ -97,7 +94,6 @@ export const useMutationHandlers: (
     "newVoiceFor",
     (voice, note, caption) => {
       if (!caption) throw new Error("can't add new voice for unknown caption");
-      console.log("new voice for", voice, caption, note);
       return dispatch(
         rmfp(caption, "new voice : " + note, () => ({
           voice,
