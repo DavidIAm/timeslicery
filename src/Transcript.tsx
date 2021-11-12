@@ -35,6 +35,7 @@ export const Transcript: React.FC<{ transcript: CaptionFile }> = ({
     },
     []
   );
+  //useEffect(() => console.log("Captions change"), [transcript.captions]);
 
   return (
     <div style={{ width: "100%" }}>

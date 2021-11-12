@@ -66,8 +66,10 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
     if (!audioPlayer) return;
     if (!clock) return;
     clock.emit("newAudioPlayer", audioPlayer);
-    const withTime = (name: string, ...args: any) =>
+    const withTime = (name: string, ...args: any) => {
+      console.log("withtime emit", name, audioPlayer.currentTime, ...args);
       clock.emit(name, audioPlayer.currentTime, ...args);
+    };
     clock.on("withTime", withTime);
     return (): void => void clock.off("withTime", withTime);
   }, [audioPlayer, clock]);
@@ -154,12 +156,16 @@ export const MediaBox: React.FC<{ audio: string }> = ({ audio }) => {
       }
       if (!audioPlayer) return;
       if (audioPlayer.currentTime >= c.start && audioPlayer.currentTime < c.end)
+        console.log("(media) Warn - jumping to start in current caption");
+      if (typeof c.start === "undefined") {
+        console.log("(media) Warn - no start of current caption", c);
         return;
-      if (typeof c.start === "undefined") return;
+      }
+      clock.emit("setSelectedTime", c.start);
       console.log("jumping!", c.start, audioPlayer.currentTime);
       currentTimeUpdate({ set: c.start });
     },
-    [audioPlayer]
+    [audioPlayer, clock]
   );
 
   useEffect(() => {

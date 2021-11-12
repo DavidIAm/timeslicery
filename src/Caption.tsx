@@ -1,3 +1,7 @@
+export interface Selected<T> {
+  gapDirection?: "before" | "after" | "exact";
+  caption: T;
+}
 export interface Caption {
   uuid: string;
   startRaw?: string;

@@ -17,9 +17,16 @@ export type DependedMutation<T> = Mutation<T> & WithDependents<T>;
 export interface WithSet<S> {
   set: S;
 }
+export interface WithAfter<T> {
+  after: T;
+}
+export interface WithBefore<T> {
+  before: T;
+}
 export interface WithDependents<T> {
   dependents: Mutation<T>[];
 }
+export type ReplaceMutation<T> = Mutation<T> & WithBefore<T> & WithAfter<T>;
 export interface Mutation<T> {
   action: MutationActions;
   uuid: string;

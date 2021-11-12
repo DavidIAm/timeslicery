@@ -6,6 +6,7 @@ import {
   mutateCaption,
   Mutation,
   MutationActions,
+  ReplaceMutation,
 } from "./Mutation";
 import { v4 } from "uuid";
 
@@ -17,14 +18,6 @@ export class CaptionSet {
     this.captions = initCaptions;
   }
 
-  // constructor(changes: CompletedMutation<Caption, captionSet>[], initCaptions?: Caption[]) {
-  //   const start = Date.now();
-  // }
-  //
-  // clone(): CaptionSet {
-  //   return new CaptionSet([], [...this.captions.map((c) => ({ ...c }))]);
-  // }
-  //
   getCaptionsNoMeta(): Caption[] {
     return this.captions;
   }
@@ -35,11 +28,6 @@ export class CaptionSet {
     return this.metaCaptions;
   }
 
-  //
-  // applyMutations(changes: CompletedMutation<Caption, CaptionSet>[]): CaptionSet {
-  //   return new CaptionSet(changes, this.captions);
-  // }
-  //
   byUuid(uuid: string): Promise<Caption> {
     return new Promise<Caption>((resolve, reject) => {
       const c = this.captions.find((c) => c.uuid === uuid);
@@ -47,11 +35,6 @@ export class CaptionSet {
       reject(new Error(`uuid not found ${uuid}`));
     });
   }
-
-  //
-  // completeMutation(mutation: Mutation): CompletedMutation<Caption, CaptionSet> {
-  //   return CaptionSet.completeMutation(mutation, this.captions);
-  // }
 
   static startEndMod(current: Caption, next?: Caption): Partial<Caption> {
     if (next && !next?.AUTHORITATIVE) return {};
@@ -152,7 +135,13 @@ export class CaptionSet {
   ): Caption[] {
     switch (mutation.action) {
       case MutationActions.REPLACE:
-        return CaptionSet.mutate_replace(mutation, captions);
+        const { before, after } = mutation;
+        if (!before) throw new Error("Replace Mutations must have before");
+        if (!after) throw new Error("Replace Mutations must have after");
+        return CaptionSet.mutate_replace(
+          { ...mutation, before, after },
+          captions
+        );
       case MutationActions.ADD:
         return CaptionSet.mutate_add(mutation, captions);
       case MutationActions.BULK_ADD:
@@ -212,14 +201,11 @@ export class CaptionSet {
   }
 
   static mutate_replace(
-    mutation: Mutation<Caption>,
+    mutation: ReplaceMutation<Caption>,
     captions: Caption[]
   ): Caption[] {
-    return [
-      ...captions.filter((caption) => caption.uuid !== mutation.before?.uuid),
-      ...(mutation.after
-        ? [{ ...mutation.after, AUTHORITATIVE: !mutation.DEPENDENT }]
-        : []),
-    ].sort((a, b) => a.start - b.start);
+    return captions.map((caption) =>
+      caption.uuid === mutation.before.uuid ? mutation.after : caption
+    );
   }
 }

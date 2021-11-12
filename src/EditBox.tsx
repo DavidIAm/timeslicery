@@ -18,9 +18,7 @@ import { LiveClock } from "./LiveClock";
 
 export const EditBox: React.FC<{
   caption: Caption;
-  prev?: Caption;
-  next?: Caption;
-}> = ({ caption, prev, next }) => {
+}> = ({ caption }) => {
   const { voice, text, foreSize, backSize } = caption || {
     start: 0,
     end: 0,
@@ -83,36 +81,20 @@ export const EditBox: React.FC<{
   useKeyboard("linesComma", keyboardHandler, []);
   useKeyboard("linesKeyB", keyboardHandler, []);
 
-  useEffect(() => {
-    if (!clock) return;
-    if (cueState === CUE_STATE.CUE_OFF) return;
-    const cancel = () => setCueState(CUE_STATE.CUE_CANCEL);
-    const save = () => setCueState(CUE_STATE.CUE_SAVE);
-    const cuein = () => setCueState(CUE_STATE.CUE_IN);
-    const cuegap = () => setCueState(CUE_STATE.CUE_GAP);
-    keyboard.on("editEscape", cancel);
-    keyboard.on("editEnter", save);
-    keyboard.on("editSpace", cuein);
-    keyboard.on("editDelete", cuegap);
-    return (): void => {
-      keyboard.off("editEscape", cancel);
-      keyboard.off("editEnter", save);
-      keyboard.off("editSpace", cuein);
-      keyboard.off("editDelete", cuegap);
-    };
-  }, [cueState, keyboard, clock]);
-
-  const [cues, subs] = useCueProcessor(cueState, caption, next, prev);
+  const [cues, subs] = useCueProcessor(cueState, caption);
   useEffect(() => {
     if (!clock) return;
     if (!cues) return;
     const forward = (n: string, ...args: any) => {
-      console.log("EmitForCue", n, ...args);
+      console.log("forEventBus", n, ...args);
       clock.emit(n, ...args);
     };
     const flist = subs.map((en): [string, (...a: any) => void] => [
       en,
-      (...args: any) => cues.emit(en, ...args),
+      (...args: any) => {
+        //        console.log("forwarding", en, ...args);
+        cues.emit(en, ...args);
+      },
     ]);
     flist.forEach(([en, func]) => clock.on(en, func));
     cues.on("forEventBus", forward);
@@ -156,7 +138,7 @@ export const EditBox: React.FC<{
     { looping: false }
   );
 
-  useCutProcessor(playLoopCue, caption, next, prev);
+  useCutProcessor(playLoopCue, caption);
 
   useEffect(() => {
     if (!caption) return;
@@ -243,8 +225,8 @@ export const EditBox: React.FC<{
         >
           <div className={"leftwards"}>
             <button
-              disabled={!prev}
-              onClick={() => clock.emit("moveTo", prev?.index)}
+              disabled={!caption?.prevCaption}
+              onClick={() => clock.emit("moveTo", caption?.prevCaption?.index)}
             >
               Prev
             </button>
@@ -254,8 +236,8 @@ export const EditBox: React.FC<{
           </div>
           <div className={"rightwards"}>
             <button
-              disabled={!next}
-              onClick={() => clock.emit("moveTo", next?.index)}
+              disabled={!caption?.nextCaption}
+              onClick={() => clock.emit("moveTo", caption?.nextCaption?.index)}
             >
               Next
             </button>
@@ -274,9 +256,23 @@ export const EditBox: React.FC<{
                 >
                   <div>
                     <div>
+                      <button onClick={() => cues.emit("cueRestart")}>
+                        Restart
+                      </button>
+                    </div>
+                    <div className="hint">S</div>
+                  </div>
+                  <div>
+                    <div>
+                      <button onClick={() => cues.emit("cueRedo")}>Redo</button>
+                    </div>
+                    <div className="hint">R</div>
+                  </div>
+                  <div>
+                    <div>
                       <button
                         disabled={cueState === CUE_STATE.CUE_GAP}
-                        onClick={() => clock.emit("cueOut")}
+                        onClick={() => cues.emit("cueOut")}
                       >
                         Out
                       </button>
@@ -285,21 +281,19 @@ export const EditBox: React.FC<{
                   </div>
                   <div>
                     <div>
-                      <button onClick={() => clock.emit("cueIn")}>In</button>
+                      <button onClick={() => cues.emit("cueIn")}>In</button>
                     </div>
                     <div className={"hint"}>Space</div>
                   </div>
                   <div>
                     <div>
-                      <button onClick={() => clock.emit("cueSave")}>
-                        Save
-                      </button>
+                      <button onClick={() => cues.emit("cueSave")}>Save</button>
                     </div>
                     <div className={"hint"}>Backspace</div>
                   </div>
                   <div>
                     <div>
-                      <button onClick={() => clock.emit("cueCancel")}>
+                      <button onClick={() => cues.emit("cueCancel")}>
                         Cancel
                       </button>
                     </div>
@@ -309,7 +303,7 @@ export const EditBox: React.FC<{
               </>
             ) : (
               <>
-                <button onClick={() => clock.emit("cueStart")}>Cue</button>
+                <button onClick={() => cues.emit("cueStart")}>Cue</button>
                 <button
                   onClick={() =>
                     clock.emit(playLoopCue === PLC.PLAY ? "pause" : "play")
@@ -346,7 +340,9 @@ export const EditBox: React.FC<{
           </div>
           <div className={"leftwards"}>
             <button
-              disabled={[PLC.PAUSE].includes(playLoopCue) || !prev}
+              disabled={
+                [PLC.PAUSE].includes(playLoopCue) || !caption.prevCaption
+              }
               onClick={() => clock.emit("withTime", "cutToPrev")}
             >
               &lt; Cut &lt;
@@ -368,7 +364,9 @@ export const EditBox: React.FC<{
           </div>
           <div className={"rightwards"}>
             <button
-              disabled={[PLC.PAUSE].includes(playLoopCue) || !next}
+              disabled={
+                [PLC.PAUSE].includes(playLoopCue) || !caption?.nextCaption
+              }
               onClick={() => clock.emit("withTime", "cutToNext")}
             >
               &gt; Cut &gt;

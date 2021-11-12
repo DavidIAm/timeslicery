@@ -3,6 +3,7 @@ import React, {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
 } from "react";
 import { Transcript } from "./Transcript";
@@ -20,15 +21,10 @@ export const UrlBox: React.FC = () => {
     "/S3E3_Get_Help_fuckedup.vtt"
   );
 
+  const cccf = useRef<CaptionFile>(new CaptionFile());
   const CfReducer: Reducer<CaptionFile, Mutation<Caption>> = (cf, mutation) => {
-    const start = Date.now();
-    const ccf = cf.applyMutation(mutation);
-    console.log(
-      "applying mutation and took",
-      mutation.action,
-      Date.now() - start,
-      ccf.changes.length
-    );
+    const ccf = cccf.current.applyMutation(mutation);
+    cccf.current = ccf;
     return ccf;
   };
   const [captionFile, dispatch] = useReducer(CfReducer, void 0, (ca) => {
@@ -36,7 +32,6 @@ export const UrlBox: React.FC = () => {
   });
 
   const [, forHeader] = useState<string>("");
-  useEffect(() => {}, []);
   useEffect(() => {
     if (!transcript) return;
     if (!dispatch) return;

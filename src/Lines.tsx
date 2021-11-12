@@ -6,7 +6,6 @@ import React, {
   useEffect,
   useMemo,
   useReducer,
-  useRef,
   useState,
 } from "react";
 import { Caption, CUE_STATE } from "./Caption";
@@ -115,17 +114,10 @@ export const Lines: React.FC<LinesProps> = ({ captions }) => {
   const [captionBlock, setCaptionBlock] = useState<HTMLDivElement | null>();
   const [cueState, setCueState] = useState<CUE_STATE>(CUE_STATE.CUE_OFF);
   useClock("cueState", setCueState, []);
-  const [{ top, bottom }, setWindow] = useState<{
+  const [topBottom, setWindow] = useState<{
     top: number;
     bottom: number;
   }>(() => ({ top: 0, bottom: 5 }));
-  const oldSize = useRef(captions.length);
-  useEffect(() => {
-    if (oldSize.current === captions.length) oldSize.current = captions.length;
-    if (!captions.length) return;
-    clock.emit("jumpToCaption", captions[0]);
-    changePosition({ abs: 0 });
-  }, [clock, captions]);
 
   useClock("setCueState", setCueState, []);
 
@@ -213,17 +205,45 @@ export const Lines: React.FC<LinesProps> = ({ captions }) => {
     };
   }, [keyboard, clock, position, captions, play]);
 
+  /// CUEING POSITION CHANGE
   useEffect(() => {
-    const candidate =
-      captions[Math.floor(position + 0.5)] || captions[captions.length - 1];
-    if (position < 0 || !candidate) return; // dunno
-    clock.emit("jumpToCaptionn", candidate, position);
+    if (cueState === CUE_STATE.CUE_OFF) return;
     const top = Math.max(Math.floor(position) - 2, 0);
     setWindow({
       top,
       bottom: Math.min(top + 5, captions.length),
     });
-  }, [position, captions.length, captions, clock]);
+  }, [cueState, position, captions.length]);
+
+  /// NORMAL POSITION CHANAGE
+  useEffect(() => {
+    if (cueState !== CUE_STATE.CUE_OFF) return;
+    const candidate =
+      captions[Math.floor(position + 0.5)] || captions[captions.length - 1];
+    if (position < 0 || !candidate) return; // dunno
+    clock.emit("jumpToCaption", candidate, position);
+    const top = Math.max(Math.floor(position) - 2, 0);
+    setWindow({
+      top,
+      bottom: Math.min(top + 5, captions.length),
+    });
+  }, [cueState, position, captions.length, captions, clock]);
+  useEffect(() => {
+    console.log("window is now", [topBottom.top, topBottom.bottom]);
+  }, [topBottom]);
+
+  useEffect(() => {
+    if (cueState !== CUE_STATE.CUE_OFF) return;
+    const candidate =
+      captions[Math.floor(position + 0.5)] || captions[captions.length - 1];
+    if (position < 0 || !candidate) return; // dunno
+    clock.emit("jumpToCaption", candidate, position);
+    const top = Math.max(Math.floor(position) - 2, 0);
+    setWindow({
+      top,
+      bottom: Math.min(top + 5, captions.length),
+    });
+  }, [cueState, position, captions.length, captions, clock]);
 
   useEffect(() => {
     if (!clock) return;
@@ -257,8 +277,6 @@ export const Lines: React.FC<LinesProps> = ({ captions }) => {
     <CueContext.Provider value={cueState}>
       <EditBox
         caption={captions[Math.min(Math.max(position, 0), captions.length - 1)]}
-        prev={position ? captions[position - 1] : void 0}
-        next={position + 2 < captions.length ? captions[position + 1] : void 0}
       />
       <div
         tabIndex={1}
@@ -266,7 +284,7 @@ export const Lines: React.FC<LinesProps> = ({ captions }) => {
         ref={setCaptionBlock}
         id={"captionBlock"}
       >
-        <LineSet top={top} bottom={bottom} set={captions} />
+        <LineSet {...topBottom} set={captions} />
       </div>
     </CueContext.Provider>
   );
